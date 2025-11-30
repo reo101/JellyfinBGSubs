@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AssemblyName>Jellyfin.Plugin.BulgarianSubs</AssemblyName>
+    <RootNamespace>Jellyfin.Plugin.BulgarianSubs</RootNamespace>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="$(JELLYFIN_PATH)/MediaBrowser.Model.dll" />
+    <Reference Include="$(JELLYFIN_PATH)/MediaBrowser.Controller.dll" />
+    <Reference Include="$(JELLYFIN_PATH)/MediaBrowser.Common.dll" />
+    <Reference Include="$(JELLYFIN_PATH)/Microsoft.Extensions.Logging.Abstractions.dll" />
+    <Reference Include="$(JELLYFIN_PATH)/Microsoft.Extensions.DependencyInjection.Abstractions.dll" />
+    <Reference Include="$(JELLYFIN_PATH)/Microsoft.Extensions.Http.dll" />
+    <PackageReference Include="HtmlAgilityPack" Version="1.11.54" />
+    <PackageReference Include="SharpCompress" Version="0.36.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="./src/Configuration.fs" />
+    <Compile Include="./src/Models.fs" />
+    <Compile Include="./src/Parsing.fs" />
+    <Compile Include="./src/Providers.fs" />
+    <Compile Include="./src/Plugin.fs" />
+  </ItemGroup>
+
+</Project>

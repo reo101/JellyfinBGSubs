@@ -1,0 +1,28 @@
+# Nix
+/result
+/result-*
+/.direnv/
+
+# prek (pre-commit)
+/.pre-commit-config.yaml
+
+# F#/.NET build artifacts
+/bin/
+/obj/
+*.user
+*.fsproj.user
+
+# Visual Studio / Rider / editors (root-level)
+/.vs/
+/.idea/
+/.vscode/
+
+# Editor temp files (anywhere)
+*.swp
+*.swo
+*~
+
+# NuGet
+packages/
+.nuget/
+*.nupkg

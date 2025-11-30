@@ -1,0 +1,16 @@
+{
+  "category": "Subtitles",
+  "changelog": "Initial release - Bulgarian subtitle providers (Subs.Sab.Bz and Subsunacs)",
+  "description": "Finds Bulgarian subtitles from Subs.Sab.Bz and Subsunacs",
+  "guid": "93b5ed36-e282-4d55-9c49-0121203b7293",
+  "name": "Bulgarian Subtitles",
+  "overview": "Bulgarian subtitle provider",
+  "owner": "reo101",
+  "targetAbi": "10.11.5.0",
+  "timestamp": "2025-12-29T00:00:00.0000000Z",
+  "version": "1.0.0.0",
+  "status": "Active",
+  "autoUpdate": false,
+  "imagePath": "/var/lib/jellyfin/plugins/BulgarianSubs_1.0.0.0/jellyfin-plugin-bulgariansubs.png",
+  "assemblies": []
+}
