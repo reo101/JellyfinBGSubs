@@ -14,7 +14,42 @@
   };
 
   outputs = inputs:
-    inputs.flake-parts.lib.mkFlake {inherit inputs;} {
+    inputs.flake-parts.lib.mkFlake {inherit inputs;} ({lib, ...}: let
+      fs = lib.fileset;
+
+      # Single source of truth for plugin metadata
+      pluginGuid = "93b5ed36-e282-4d55-9c49-0121203b7293";
+      pluginVersion = "1.0.0.0";
+      targetAbi = "10.11.5.0";
+      pluginRepo = "reo101/JellyfinBGSubs";
+
+      pluginSrc = let
+        src = fs.toSource {
+          root = ./.;
+          fileset = fs.unions [
+            (fs.fileFilter (f: f.hasExt "fs" || f.hasExt "fsproj") ./src)
+            ./Jellyfin.Plugin.BulgarianSubs.fsproj
+          ];
+        };
+
+        # Verify Plugin.fs contains the expected GUID
+        pluginFsContent = builtins.readFile "${src}/src/Plugin.fs";
+        pluginFsGuidMatch = builtins.match ''.*Guid\.Parse\("([^"]+)"\).*'' pluginFsContent;
+        pluginFsGuid =
+          if pluginFsGuidMatch != null
+          then builtins.head pluginFsGuidMatch
+          else throw "Could not extract GUID from Plugin.fs";
+      in
+        assert pluginGuid == pluginFsGuid; src;
+
+      # Plugin assemblies - single source of truth for DLL copying and meta.json
+      pluginAssemblies = [
+        "Jellyfin.Plugin.BulgarianSubs.dll"
+        "FSharp.Core.dll"
+        "HtmlAgilityPack.dll"
+        "SharpCompress.dll"
+      ];
+    in {
       imports = [
         inputs.treefmt-nix.flakeModule
         inputs.pre-commit-hooks.flakeModule
@@ -26,9 +61,7 @@
         pkgs,
         lib,
         ...
-      }: let
-        fs = lib.fileset;
-      in {
+      }: {
         treefmt.config = {
           projectRootFile = "flake.nix";
           programs = {
@@ -52,24 +85,10 @@
           };
         };
 
-        packages.default = let
-          version = "1.0.0.0";
-          src = fs.toSource {
-            root = ./.;
-            fileset = fs.unions [
-              (fs.fileFilter (f: f.hasExt "fs" || f.hasExt "fsproj") ./src)
-              ./Jellyfin.Plugin.BulgarianSubs.fsproj
-            ];
-          };
-          pluginGuid = let
-            pluginFs = builtins.readFile "${src}/src/Plugin.fs";
-            match = builtins.match ''.*Guid\.Parse\("([^"]+)"\).*'' pluginFs;
-          in
-            if match != null then builtins.head match else throw "Could not extract GUID from Plugin.fs";
-          targetAbi = "10.11.5.0";
-        in pkgs.buildDotnetModule {
+        packages.default = pkgs.buildDotnetModule {
           pname = "Jellyfin.Plugin.BulgarianSubs";
-          inherit version src;
+          version = pluginVersion;
+          src = pluginSrc;
 
           projectFile = "Jellyfin.Plugin.BulgarianSubs.fsproj";
 
@@ -80,20 +99,24 @@
 
           executables = [];
 
-          nativeBuildInputs = [ pkgs.jq ];
+          nativeBuildInputs = [pkgs.jq];
 
           env = {
             JELLYFIN_PATH = "${pkgs.jellyfin}/lib/jellyfin";
           };
 
-          installPhase = ''
-            install -d -m 700 $out/BulgarianSubs_${version}
+          installPhase = let
+            assembliesJson = builtins.toJSON pluginAssemblies;
+            copyAssemblies =
+              lib.concatMapStringsSep "\n" (
+                dll: "install -m 600 bin/Release/net9.0/linux-x64/${dll} $out/BulgarianSubs_${pluginVersion}/"
+              )
+              pluginAssemblies;
+          in ''
+            install -d -m 700 $out/BulgarianSubs_${pluginVersion}
 
-            # Copy only the plugin DLL and its actual dependencies (not Jellyfin's own DLLs)
-            install -m 600 bin/Release/net9.0/linux-x64/Jellyfin.Plugin.BulgarianSubs.dll $out/BulgarianSubs_${version}/
-            install -m 600 bin/Release/net9.0/linux-x64/FSharp.Core.dll $out/BulgarianSubs_${version}/
-            install -m 600 bin/Release/net9.0/linux-x64/HtmlAgilityPack.dll $out/BulgarianSubs_${version}/
-            install -m 600 bin/Release/net9.0/linux-x64/SharpCompress.dll $out/BulgarianSubs_${version}/
+            # Copy plugin DLLs
+            ${copyAssemblies}
 
             # Generate meta.json dynamically
             jq -n \
@@ -104,7 +127,8 @@
               --arg overview "Bulgarian subtitle provider with multiple sources" \
               --arg owner "reo101" \
               --arg targetAbi "${targetAbi}" \
-              --arg version "${version}" \
+              --arg version "${pluginVersion}" \
+              --argjson assemblies '${assembliesJson}' \
               '{
                 category: $category,
                 description: $description,
@@ -117,20 +141,22 @@
                 status: "Active",
                 autoUpdate: false,
                 imagePath: "icon.png",
-                assemblies: [
-                  "Jellyfin.Plugin.BulgarianSubs.dll",
-                  "FSharp.Core.dll",
-                  "HtmlAgilityPack.dll",
-                  "SharpCompress.dll"
-                ]
-              }' > $out/BulgarianSubs_${version}/meta.json
+                assemblies: $assemblies
+              }' > $out/BulgarianSubs_${pluginVersion}/meta.json
 
             install -m 600 ${pkgs.fetchurl {
               url = "https://zamunda.net/pic/pic/z_icons/bgsubs.png";
               hash = "sha256-6WCRVR7KRYBEbPeynkGfIg5IlyTimrvDwINiaIdSMN4=";
-            }} $out/BulgarianSubs_${version}/icon.png
+            }} $out/BulgarianSubs_${pluginVersion}/icon.png
           '';
         };
+
+        packages.zip = pkgs.runCommand "bulgariansubs-${pluginVersion}.zip" {
+          nativeBuildInputs = [pkgs.zip];
+        } ''
+          cd ${config.packages.default}
+          zip -r $out BulgarianSubs_*/
+        '';
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
@@ -156,13 +182,48 @@
 
         apps.update-deps = {
           type = "app";
-          program = pkgs.writeShellScriptBin "update-deps" ''
+          program = lib.getExe (pkgs.writeShellScriptBin "update-deps" ''
             ${lib.getExe pkgs.nuget-to-json} . > ./deps.json
             echo "✓ Updated deps.json"
-          '';
+          '');
+        };
+
+        apps.update-manifest = let
+          sourceUrl = "https://github.com/${pluginRepo}/releases/download/v${pluginVersion}/bulgariansubs-${pluginVersion}.zip";
+        in {
+          type = "app";
+          program = lib.getExe (pkgs.writeShellScriptBin "update-manifest" ''
+            CHECKSUM=$(md5sum ${config.packages.zip} | cut -d ' ' -f 1)
+
+            ${lib.getExe pkgs.jq} -n \
+              --arg guid "${pluginGuid}" \
+              --arg version "${pluginVersion}" \
+              --arg targetAbi "${targetAbi}" \
+              --arg sourceUrl "${sourceUrl}" \
+              --arg checksum "$CHECKSUM" \
+              '[{
+                category: "Subtitles",
+                guid: $guid,
+                name: "Bulgarian Subtitles",
+                description: "Finds Bulgarian subtitles from multiple providers: Subs.Sab.Bz, Subsunacs, Yavka.net, and Podnapisi.net",
+                owner: "reo101",
+                overview: "Bulgarian subtitle provider with multiple sources",
+                versions: [{
+                  version: $version,
+                  targetAbi: $targetAbi,
+                  sourceUrl: $sourceUrl,
+                  checksum: $checksum
+                }]
+              }]' > ./manifest.json
+            echo "✓ Updated manifest.json"
+            echo "  GUID: ${pluginGuid}"
+            echo "  Version: ${pluginVersion}"
+            echo "  Checksum: $CHECKSUM"
+            echo "  Source URL: ${sourceUrl}"
+          '');
         };
 
         apps.default = config.apps.update-deps;
       };
-    };
+    });
 }

@@ -17,13 +17,23 @@ module SubsunuacsImpl =
     | _ -> None
 
   let private tryParseFloat (s: string) =
-    match System.Double.TryParse(clean s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture) with
+    match
+      System.Double.TryParse(
+        clean s,
+        System.Globalization.NumberStyles.Float,
+        System.Globalization.CultureInfo.InvariantCulture
+      )
+    with
     | true, v -> Some v
     | _ -> None
 
   let private extractFormat (tooltip: string) =
     let m = Regex.Match(tooltip, @"Формат:\s*&lt;/b&gt;(\w+)", RegexOptions.IgnoreCase)
-    if m.Success then Some(m.Groups.[1].Value.ToLowerInvariant()) else None
+
+    if m.Success then
+      Some(m.Groups.[1].Value.ToLowerInvariant())
+    else
+      None
 
   /// Parse search results from Subsunacs HTML response
   /// Row: td[0]=title(tdMovie), td[1]=CDs, td[2]=FPS, td[3]=rating, td[4]=comments, td[5]=uploader, td[6]=downloads
@@ -64,7 +74,13 @@ module SubsunuacsImpl =
               let fps = tryParseFloat cells.[2].InnerText
               let rating = tryParseFloat cells.[3].InnerText
               let uploaderNode = cells.[5].SelectSingleNode(".//a")
-              let author = if uploaderNode <> null then Some(clean uploaderNode.InnerText) else None
+
+              let author =
+                if uploaderNode <> null then
+                  Some(clean uploaderNode.InnerText)
+                else
+                  None
+
               let downloads = tryParseInt cells.[6].InnerText
 
               let downloadUrl = "https://subsunacs.net/getentry.php?id=" + idValue + "&ei=0"
@@ -100,7 +116,6 @@ type Subsunacs() =
     member _.CreateSearchRequest (url: string) (_searchTerm: string) : HttpRequestMessage =
       new HttpRequestMessage(HttpMethod.Get, url)
 
-    member _.CreateDownloadStrategy (url: string) : DownloadStrategy =
-      DirectUrl(url, referer)
+    member _.CreateDownloadStrategy(url: string) : DownloadStrategy = DirectUrl(url, referer)
 
     member _.ParseResults(html: string) : InternalSubtitleInfo seq = SubsunuacsImpl.parseSearchResults html

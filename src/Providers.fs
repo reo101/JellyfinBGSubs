@@ -30,7 +30,8 @@ type BulgarianSubtitleProvider
   let requestTimeout = TimeSpan.FromSeconds(10.0)
 
   // User-Agent for requests
-  let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  let userAgent =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
   // List of all available providers
   let providers: IProvider list = [ SabBz(); Subsunacs(); YavkaNet(); Podnapisi() ]
@@ -218,40 +219,42 @@ type BulgarianSubtitleProvider
                   | None -> ()
                   | Some response ->
 
-                  let! bytes = readResponseAsBytes response cancellationToken
-                  logger.LogDebug($"[{provider.Name}] Response: {response.StatusCode}, {bytes.Length} bytes")
-                  let encoding = System.Text.Encoding.GetEncoding("windows-1251")
-                  let html = encoding.GetString(bytes)
+                    let! bytes = readResponseAsBytes response cancellationToken
+                    logger.LogDebug($"[{provider.Name}] Response: {response.StatusCode}, {bytes.Length} bytes")
+                    let encoding = System.Text.Encoding.GetEncoding("windows-1251")
+                    let html = encoding.GetString(bytes)
 
-                  let parsedItems = provider.ParseResults html |> Seq.toList
-                  logger.LogDebug($"[{provider.Name}] Parsed {parsedItems.Length} raw results")
+                    let parsedItems = provider.ParseResults html |> Seq.toList
+                    logger.LogDebug($"[{provider.Name}] Parsed {parsedItems.Length} raw results")
 
-                  parsedItems
-                  |> Seq.filter (fun item ->
-                    match (season, episode) with
-                    | (Some s, Some e) -> matchesEpisode s e item.Title
-                    | _ -> true)
-                  |> Seq.iter (fun item ->
-                    let info = RemoteSubtitleInfo()
+                    parsedItems
+                    |> Seq.filter (fun item ->
+                      match (season, episode) with
+                      | (Some s, Some e) -> matchesEpisode s e item.Title
+                      | _ -> true)
+                    |> Seq.iter (fun item ->
+                      let info = RemoteSubtitleInfo()
 
-                    match item.DownloadStrategy with
-                    | DirectUrl(url, _) -> info.Id <- $"{provider.Name}|{url}"
-                    | FormPage(pageUrl, _) -> info.Id <- $"{provider.Name}|{pageUrl}"
+                      match item.DownloadStrategy with
+                      | DirectUrl(url, _) -> info.Id <- $"{provider.Name}|{url}"
+                      | FormPage(pageUrl, _) -> info.Id <- $"{provider.Name}|{pageUrl}"
 
-                    info.Name <- item.Title
-                    info.ProviderName <- "Bulgarian Subtitles"
-                    info.ThreeLetterISOLanguageName <- "bul"
-                    info.Format <- item.Format |> Option.defaultValue ""
-                    info.Author <- item.Author |> Option.defaultValue ""
-                    info.DownloadCount <- item.DownloadCount |> Option.defaultValue 0
-                    info.FrameRate <- item.FrameRate |> Option.map float32 |> Option.toNullable
-                    info.CommunityRating <- item.Rating |> Option.map float32 |> Option.toNullable
-                    info.DateCreated <- item.UploadDate |> Option.toNullable
-                    info.Comment <-
-                      match item.InfoPageUrl with
-                      | Some url -> $"[{item.ProviderName}]\n{url}"
-                      | None -> $"[{item.ProviderName}]"
-                    results.Add(info))
+                      info.Name <- item.Title
+                      info.ProviderName <- "Bulgarian Subtitles"
+                      info.ThreeLetterISOLanguageName <- "bul"
+                      info.Format <- item.Format |> Option.defaultValue ""
+                      info.Author <- item.Author |> Option.defaultValue ""
+                      info.DownloadCount <- item.DownloadCount |> Option.defaultValue 0
+                      info.FrameRate <- item.FrameRate |> Option.map float32 |> Option.toNullable
+                      info.CommunityRating <- item.Rating |> Option.map float32 |> Option.toNullable
+                      info.DateCreated <- item.UploadDate |> Option.toNullable
+
+                      info.Comment <-
+                        match item.InfoPageUrl with
+                        | Some url -> $"[{item.ProviderName}]\n{url}"
+                        | None -> $"[{item.ProviderName}]"
+
+                      results.Add(info))
 
                 with ex ->
                   logger.LogError(ex, $"Error searching {provider.Name}")
@@ -262,7 +265,10 @@ type BulgarianSubtitleProvider
           let sortedResults =
             results
             |> Seq.sortByDescending (fun r ->
-              if r.DownloadCount.HasValue then r.DownloadCount.Value else 0)
+              if r.DownloadCount.HasValue then
+                r.DownloadCount.Value
+              else
+                0)
             |> Seq.toList
 
           logger.LogInformation($"Search complete, found {sortedResults.Length} subtitles")
@@ -279,6 +285,7 @@ type BulgarianSubtitleProvider
           let providerName, url = parts.[0], parts.[1]
 
           let providerOpt = providers |> List.tryFind (fun p -> p.Name = providerName)
+
           let strategy =
             match providerOpt with
             | Some provider -> provider.CreateDownloadStrategy url

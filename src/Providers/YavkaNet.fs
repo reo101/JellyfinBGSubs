@@ -96,7 +96,13 @@ module YavkaNetImpl =
     | _ -> None
 
   let private tryParseFloat (s: string) =
-    match System.Double.TryParse(s.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture) with
+    match
+      System.Double.TryParse(
+        s.Trim(),
+        System.Globalization.NumberStyles.Float,
+        System.Globalization.CultureInfo.InvariantCulture
+      )
+    with
     | true, v -> Some v
     | _ -> None
 
@@ -137,6 +143,7 @@ type YavkaNet() =
       req.Headers.Add("Referer", "https://yavka.net/subtitles/")
       req.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
       req.Headers.Add("Accept-Language", "bg,en-US;q=0.7,en;q=0.3")
+
       req.Content <-
         new FormUrlEncodedContent(
           [ new KeyValuePair<string, string>("s", searchTerm)
@@ -148,10 +155,10 @@ type YavkaNet() =
             new KeyValuePair<string, string>("i", "")
             new KeyValuePair<string, string>("search", "\uf002 Търсене") ]
         )
+
       req
 
-    member _.CreateDownloadStrategy (url: string) : DownloadStrategy =
-      FormPage(url, referer)
+    member _.CreateDownloadStrategy(url: string) : DownloadStrategy = FormPage(url, referer)
 
     member _.ParseResults(html: string) : InternalSubtitleInfo seq =
       YavkaNetImpl.parseSearchResults html

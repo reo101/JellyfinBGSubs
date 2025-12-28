@@ -23,7 +23,13 @@ module SabBzImpl =
     | _ -> None
 
   let private tryParseFloat (s: string) =
-    match System.Double.TryParse(clean s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture) with
+    match
+      System.Double.TryParse(
+        clean s,
+        System.Globalization.NumberStyles.Float,
+        System.Globalization.CultureInfo.InvariantCulture
+      )
+    with
     | true, v -> Some v
     | _ -> None
 
@@ -36,7 +42,8 @@ module SabBzImpl =
       None
 
   let private extractReleaseInfo (tooltip: string) =
-    let m = Regex.Match(tooltip, @"Доп\. инфо&lt;/b&gt;:\s*([^<']+)", RegexOptions.IgnoreCase)
+    let m =
+      Regex.Match(tooltip, @"Доп\. инфо&lt;/b&gt;:\s*([^<']+)", RegexOptions.IgnoreCase)
 
     if m.Success then
       let info = m.Groups.[1].Value.Trim()
@@ -73,6 +80,7 @@ module SabBzImpl =
               let tooltip = linkNode.GetAttributeValue("onMouseover", "")
 
               let releaseInfo = extractReleaseInfo tooltip
+
               let titleText =
                 match releaseInfo with
                 | Some release -> $"{baseTitleText} - {release}"
@@ -91,7 +99,8 @@ module SabBzImpl =
 
               let downloads = tryParseInt cells.[10].InnerText
 
-              let infoPageUrl = $"http://subs.sab.bz/index.php?act=details&sid={idValue}&type=comment"
+              let infoPageUrl =
+                $"http://subs.sab.bz/index.php?act=details&sid={idValue}&type=comment"
 
               Some
                 { Id = idValue
@@ -123,7 +132,6 @@ type SabBz() =
     member _.CreateSearchRequest (url: string) (_searchTerm: string) : HttpRequestMessage =
       new HttpRequestMessage(HttpMethod.Get, url)
 
-    member _.CreateDownloadStrategy (url: string) : DownloadStrategy =
-      DirectUrl(url, referer)
+    member _.CreateDownloadStrategy(url: string) : DownloadStrategy = DirectUrl(url, referer)
 
     member _.ParseResults(html: string) : InternalSubtitleInfo seq = SabBzImpl.parseSearchResults html

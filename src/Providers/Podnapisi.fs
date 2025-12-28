@@ -17,7 +17,13 @@ module PodnapisiImpl =
     | _ -> None
 
   let private tryParseFloat (s: string) =
-    match System.Double.TryParse(clean s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture) with
+    match
+      System.Double.TryParse(
+        clean s,
+        System.Globalization.NumberStyles.Float,
+        System.Globalization.CultureInfo.InvariantCulture
+      )
+    with
     | true, v -> Some v
     | _ -> None
 
@@ -64,6 +70,7 @@ module PodnapisiImpl =
             let urlPath = getNodeText "url"
 
             let downloadUrl = $"https://www.podnapisi.net/subtitles/{pid}/download"
+
             let infoPageUrl =
               urlPath
               |> Option.map (fun p -> $"https://www.podnapisi.net{p}")
@@ -100,7 +107,6 @@ type Podnapisi() =
     member _.CreateSearchRequest (url: string) (_searchTerm: string) : HttpRequestMessage =
       new HttpRequestMessage(HttpMethod.Get, url)
 
-    member _.CreateDownloadStrategy (url: string) : DownloadStrategy =
-      DirectUrl(url, referer)
+    member _.CreateDownloadStrategy(url: string) : DownloadStrategy = DirectUrl(url, referer)
 
     member _.ParseResults(xml: string) : InternalSubtitleInfo seq = PodnapisiImpl.parseSearchResults xml

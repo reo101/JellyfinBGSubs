@@ -1,27 +1,22 @@
 name: Build
-
 on:
   push:
     branches: [master, main]
   pull_request:
     branches: [master, main]
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Install Nix
         uses: metacraft-labs/nixos-modules/.github/install-nix@main
         with:
           cachix-cache: ${{ secrets.CACHIX_CACHE || 'devenv' }}
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN || '' }}
-
       - name: Build plugin
         run: nix build
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
