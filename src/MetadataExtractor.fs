@@ -23,35 +23,54 @@ module MetadataExtractor =
   /// Extract title from media file path
   /// Parses common naming patterns like "Movie.Title.2020.1080p.BluRay.mkv" or "Movie Title (2020)/Movie Title (2020).mkv"
   let private extractTitleFromPath (mediaPath: string) : string option =
-    if String.IsNullOrEmpty mediaPath then None
+    if String.IsNullOrEmpty mediaPath then
+      None
     else
       try
         // Get the filename without extension
         let fileName = Path.GetFileNameWithoutExtension(mediaPath)
-        if String.IsNullOrEmpty fileName then None
+
+        if String.IsNullOrEmpty fileName then
+          None
         else
           // Try to extract title using common patterns
-          
+
           // Pattern 1: "Title.Year.Quality..." or "Title Year Quality..."
           // Match: everything before a 4-digit year (19xx or 20xx)
-          let yearPattern = Regex(@"^(.+?)[.\s_-]*((?:19|20)\d{2})[.\s_-]*", RegexOptions.IgnoreCase)
+          let yearPattern =
+            Regex(@"^(.+?)[.\s_-]*((?:19|20)\d{2})[.\s_-]*", RegexOptions.IgnoreCase)
+
           let yearMatch = yearPattern.Match(fileName)
-          
+
           if yearMatch.Success then
             let title = yearMatch.Groups.[1].Value
             // Replace dots, underscores with spaces and clean up
             let cleanTitle = Regex.Replace(title, @"[._]", " ").Trim()
-            if not (String.IsNullOrWhiteSpace cleanTitle) then Some cleanTitle
-            else None
+
+            if not (String.IsNullOrWhiteSpace cleanTitle) then
+              Some cleanTitle
+            else
+              None
           else
             // Pattern 2: Just use the filename, replace dots/underscores
             let cleanTitle = Regex.Replace(fileName, @"[._]", " ")
             // Remove common quality/codec tags at the end
-            let withoutTags = Regex.Replace(cleanTitle, @"\s*(720p|1080p|2160p|4K|BluRay|BRRip|WEBRip|HDTV|DVDRip|x264|x265|HEVC|AAC|AC3|DTS).*$", "", RegexOptions.IgnoreCase)
+            let withoutTags =
+              Regex.Replace(
+                cleanTitle,
+                @"\s*(720p|1080p|2160p|4K|BluRay|BRRip|WEBRip|HDTV|DVDRip|x264|x265|HEVC|AAC|AC3|DTS).*$",
+                "",
+                RegexOptions.IgnoreCase
+              )
+
             let finalTitle = withoutTags.Trim()
-            if not (String.IsNullOrWhiteSpace finalTitle) then Some finalTitle
-            else None
-      with _ -> None
+
+            if not (String.IsNullOrWhiteSpace finalTitle) then
+              Some finalTitle
+            else
+              None
+      with _ ->
+        None
 
   /// Extract IMDB ID from ProviderIds dictionary
   let private extractImdbId (providerIds: System.Collections.Generic.Dictionary<string, string>) : string option =
@@ -62,7 +81,8 @@ module MetadataExtractor =
         match dict.TryGetValue "Imdb" with
         | (true, id) when not (String.IsNullOrEmpty id) -> Some id
         | _ -> None
-      with _ -> None
+      with _ ->
+        None
 
   /// Extract TMDb ID from ProviderIds dictionary
   let private extractTmdbId (providerIds: System.Collections.Generic.Dictionary<string, string>) : string option =
@@ -73,7 +93,8 @@ module MetadataExtractor =
         match dict.TryGetValue "Tmdb" with
         | (true, id) when not (String.IsNullOrEmpty id) -> Some id
         | _ -> None
-      with _ -> None
+      with _ ->
+        None
 
   /// Determine if request is for a movie
   let isMovie (request: SubtitleSearchRequest) : bool =
@@ -86,8 +107,7 @@ module MetadataExtractor =
   /// Extract season and episode numbers if available
   let extractEpisodeInfo (request: SubtitleSearchRequest) : (int * int) option =
     match (request.ParentIndexNumber, request.IndexNumber) with
-    | (season, episode) when season.HasValue && episode.HasValue ->
-      Some (season.Value, episode.Value)
+    | (season, episode) when season.HasValue && episode.HasValue -> Some(season.Value, episode.Value)
     | _ -> None
 
   /// Extract year from ProductionYear if available
@@ -103,9 +123,19 @@ module MetadataExtractor =
     let year = extractYear request
     let isMovie = isMovie request
     let isEpisode = isEpisode request
-    let seriesName = if not (String.IsNullOrEmpty request.SeriesName) then Some request.SeriesName else None
+
+    let seriesName =
+      if not (String.IsNullOrEmpty request.SeriesName) then
+        Some request.SeriesName
+      else
+        None
+
     let episodeInfo = extractEpisodeInfo request
-    let contentType = request.ContentType.ToString() |> (fun s -> if String.IsNullOrEmpty s then None else Some s)
+
+    let contentType =
+      request.ContentType.ToString()
+      |> (fun s -> if String.IsNullOrEmpty s then None else Some s)
+
     let fileBasedTitle = extractTitleFromPath request.MediaPath
 
     { ImdbId = imdbId
@@ -140,8 +170,7 @@ module MetadataExtractor =
       // Priority 4: Display name with year
       match metadata.Year with
       | Some year -> yield sprintf "%s %d" baseSearchTerm year
-      | None -> ()
-    ]
+      | None -> () ]
     |> List.distinct
 
   /// Check if metadata indicates high-confidence match
@@ -163,13 +192,37 @@ module MetadataExtractor =
   /// Get a human-readable description of available metadata
   let describeMetadata (metadata: ExtractedMetadata) : string =
     let parts = []
-    let parts = match metadata.ContentType with Some ct -> parts @ [$"{ct}"] | None -> parts
-    let parts = match metadata.ImdbId with Some id -> parts @ [$"IMDb:{id}"] | None -> parts
-    let parts = match metadata.TmdbId with Some id -> parts @ [$"TMDb:{id}"] | None -> parts
-    let parts = match metadata.Year with Some year -> parts @ [$"{year}"] | None -> parts
-    let parts = match metadata.EpisodeInfo with Some (s, e) -> parts @ [$"S{s:D2}E{e:D2}"] | None -> parts
-    let parts = match metadata.FileBasedTitle with Some title -> parts @ [$"File:\"{title}\""] | None -> parts
-    
+
+    let parts =
+      match metadata.ContentType with
+      | Some ct -> parts @ [ $"{ct}" ]
+      | None -> parts
+
+    let parts =
+      match metadata.ImdbId with
+      | Some id -> parts @ [ $"IMDb:{id}" ]
+      | None -> parts
+
+    let parts =
+      match metadata.TmdbId with
+      | Some id -> parts @ [ $"TMDb:{id}" ]
+      | None -> parts
+
+    let parts =
+      match metadata.Year with
+      | Some year -> parts @ [ $"{year}" ]
+      | None -> parts
+
+    let parts =
+      match metadata.EpisodeInfo with
+      | Some(s, e) -> parts @ [ $"S{s:D2}E{e:D2}" ]
+      | None -> parts
+
+    let parts =
+      match metadata.FileBasedTitle with
+      | Some title -> parts @ [ $"File:\"{title}\"" ]
+      | None -> parts
+
     match parts with
     | [] -> "No metadata"
     | parts -> String.concat ", " parts

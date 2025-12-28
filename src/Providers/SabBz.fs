@@ -23,7 +23,11 @@ module SabBzImpl =
 
   let private extractFormat (tooltip: string) =
     let m = Regex.Match(tooltip, @"<b>Формат</b>:\s*(\w+)", RegexOptions.IgnoreCase)
-    if m.Success then Some(m.Groups.[1].Value.ToLowerInvariant()) else None
+
+    if m.Success then
+      Some(m.Groups.[1].Value.ToLowerInvariant())
+    else
+      None
 
   /// Parse search results from Sab.Bz HTML response
   /// Row structure: td[1-3]=icons, td[4]=title+link, td[5]=date, td[6]=lang, td[7]=CDs, td[8]=FPS, td[9]=uploader, td[10]=imdb, td[11]=downloads
@@ -56,7 +60,13 @@ module SabBzImpl =
               let uploadDate = Parsing.tryParseBulgarianDate (clean cells.[4].InnerText)
               let format = extractFormat tooltip
               let uploaderNode = cells.[8].SelectSingleNode(".//a")
-              let author = if uploaderNode <> null then Some(clean uploaderNode.InnerText) else None
+
+              let author =
+                if uploaderNode <> null then
+                  Some(clean uploaderNode.InnerText)
+                else
+                  None
+
               let downloads = tryParseInt cells.[10].InnerText
 
               Some

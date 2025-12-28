@@ -16,7 +16,8 @@ open Jellyfin.Plugin.BulgarianSubs.Providers
 open ComputationExpressions
 
 /// The main Jellyfin subtitle provider for Bulgarian subtitles
-type BulgarianSubtitleProvider(logger: ILogger<BulgarianSubtitleProvider>, httpClientFactory: IHttpClientFactory, libraryManager: ILibraryManager) =
+type BulgarianSubtitleProvider
+  (logger: ILogger<BulgarianSubtitleProvider>, httpClientFactory: IHttpClientFactory, libraryManager: ILibraryManager) =
 
   // Register code page encodings on first instantiation
   static do Encoding.RegisterProvider CodePagesEncodingProvider.Instance
@@ -35,6 +36,7 @@ type BulgarianSubtitleProvider(logger: ILogger<BulgarianSubtitleProvider>, httpC
         None
       else
         let item = libraryManager.FindByPath(mediaPath, Nullable())
+
         match item with
         | :? Movie as movie ->
           if not (String.IsNullOrEmpty(movie.OriginalTitle)) then
@@ -132,7 +134,10 @@ type BulgarianSubtitleProvider(logger: ILogger<BulgarianSubtitleProvider>, httpC
             None
 
         let metadataDesc = MetadataExtractor.describeMetadata metadata
-        logger.LogDebug($"Search: language={request.Language}, name={searchName}, season={season}, episode={episode}, metadata={metadataDesc}")
+
+        logger.LogDebug(
+          $"Search: language={request.Language}, name={searchName}, season={season}, episode={episode}, metadata={metadataDesc}"
+        )
 
         if not (isSupportedLanguage request.Language) then
           logger.LogDebug($"Language {request.Language} not supported, returning empty")
@@ -157,19 +162,22 @@ type BulgarianSubtitleProvider(logger: ILogger<BulgarianSubtitleProvider>, httpC
             let encoded = baseTerms |> List.map System.Net.WebUtility.UrlEncode
             // Take up to 3 variations (file title, file+year, display name)
             encoded |> List.truncate 3
-          
+
           let variationsStr = searchVariations |> String.concat ", "
           logger.LogDebug($"Search variations: {variationsStr}")
           logger.LogDebug($"About to search {providers.Length} providers with {searchVariations.Length} variations")
+
           for provider in providers do
             try
               logger.LogDebug($"Searching provider {provider.Name}")
+
               for encodedSearchTerm in searchVariations do
                 let url = provider.SearchUrl encodedSearchTerm year
                 logger.LogDebug($"[{provider.Name}] URL: {url}")
 
                 try
                   logger.LogDebug($"[{provider.Name}] Making HTTP request...")
+
                   let! response =
                     try
                       match provider.Name with
@@ -179,12 +187,12 @@ type BulgarianSubtitleProvider(logger: ILogger<BulgarianSubtitleProvider>, httpC
                             [ new KeyValuePair<string, string>("s", encodedSearchTerm)
                               new KeyValuePair<string, string>("l", "BG") ]
                           )
+
                         httpClient.PostAsync(url, content, cancellationToken)
-                      | _ ->
-                        httpClient.GetAsync(url, cancellationToken)
+                      | _ -> httpClient.GetAsync(url, cancellationToken)
                     with httpEx ->
                       logger.LogDebug($"[{provider.Name}] HTTP Exception: {httpEx.Message}")
-                      reraise()
+                      reraise ()
 
                   let! bytes = readResponseAsBytes response cancellationToken
                   logger.LogDebug($"[{provider.Name}] Response: {response.StatusCode}, {bytes.Length} bytes")
@@ -201,6 +209,7 @@ type BulgarianSubtitleProvider(logger: ILogger<BulgarianSubtitleProvider>, httpC
                     | _ -> true)
                   |> Seq.iter (fun item ->
                     let info = RemoteSubtitleInfo()
+
                     match item.DownloadStrategy with
                     | DirectUrl(url, _) -> info.Id <- $"{provider.Name}|{url}"
                     | FormPage(pageUrl, _) -> info.Id <- $"{provider.Name}|{pageUrl}"
