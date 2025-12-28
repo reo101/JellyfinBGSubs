@@ -109,7 +109,8 @@ module YavkaNetImpl =
             Some r.Uploader
         DownloadCount = tryParseInt r.Downloads
         DownloadStrategy = FormPage(r.PageUrl, "https://yavka.net/")
-        UploadDate = None })
+        UploadDate = None
+        InfoPageUrl = Some r.PageUrl })
 
 /// Yavka.net subtitle provider implementation
 /// Handles 3-step flow: POST search → GET page → extract form → POST download

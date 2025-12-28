@@ -14,4 +14,5 @@ type InternalSubtitleInfo =
     Author: string option
     DownloadCount: int option
     DownloadStrategy: DownloadStrategy
-    UploadDate: System.DateTime option }
+    UploadDate: System.DateTime option
+    InfoPageUrl: string option }

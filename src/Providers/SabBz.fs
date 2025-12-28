@@ -29,6 +29,15 @@ module SabBzImpl =
     else
       None
 
+  let private extractReleaseInfo (tooltip: string) =
+    let m = Regex.Match(tooltip, @"Доп\. инфо&lt;/b&gt;:\s*([^<']+)", RegexOptions.IgnoreCase)
+
+    if m.Success then
+      let info = m.Groups.[1].Value.Trim()
+      if String.IsNullOrWhiteSpace info then None else Some info
+    else
+      None
+
   /// Parse search results from Sab.Bz HTML response
   /// Row structure: td[1-3]=icons, td[4]=title+link, td[5]=date, td[6]=lang, td[7]=CDs, td[8]=FPS, td[9]=uploader, td[10]=imdb, td[11]=downloads
   let parseSearchResults (html: string) : InternalSubtitleInfo seq =
@@ -54,8 +63,14 @@ module SabBzImpl =
               None
             else
               let idValue = matchId.Groups.[1].Value
-              let titleText = clean linkNode.InnerText
+              let baseTitleText = clean linkNode.InnerText
               let tooltip = linkNode.GetAttributeValue("onMouseover", "")
+
+              let releaseInfo = extractReleaseInfo tooltip
+              let titleText =
+                match releaseInfo with
+                | Some release -> $"{baseTitleText} - {release}"
+                | None -> baseTitleText
 
               let uploadDate = Parsing.tryParseBulgarianDate (clean cells.[4].InnerText)
               let format = extractFormat tooltip
@@ -69,6 +84,8 @@ module SabBzImpl =
 
               let downloads = tryParseInt cells.[10].InnerText
 
+              let infoPageUrl = $"http://subs.sab.bz/index.php?act=sinfo&attach_id={idValue}"
+
               Some
                 { Id = idValue
                   Title = titleText
@@ -77,7 +94,8 @@ module SabBzImpl =
                   Author = author
                   DownloadCount = downloads
                   DownloadStrategy = DirectUrl(downloadUrl href, "http://subs.sab.bz/")
-                  UploadDate = uploadDate })
+                  UploadDate = uploadDate
+                  InfoPageUrl = Some infoPageUrl })
     with _ ->
       Seq.empty
 

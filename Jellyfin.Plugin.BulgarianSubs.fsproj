@@ -30,6 +30,7 @@
     <Compile Include="./src/Providers/SabBz.fs" />
     <Compile Include="./src/Providers/Subsunacs.fs" />
     <Compile Include="./src/Providers/YavkaNet.fs" />
+    <Compile Include="./src/Providers/Podnapisi.fs" />
     <Compile Include="./src/Providers.fs" />
     <Compile Include="./src/PluginServiceRegistrator.fs" />
     <Compile Include="./src/Plugin.fs" />

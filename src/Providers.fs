@@ -14,6 +14,7 @@ open MediaBrowser.Model.Providers
 open Microsoft.Extensions.Logging
 open Jellyfin.Plugin.BulgarianSubs.Providers
 open ComputationExpressions
+open System.Threading.Tasks
 
 /// The main Jellyfin subtitle provider for Bulgarian subtitles
 type BulgarianSubtitleProvider
@@ -26,8 +27,20 @@ type BulgarianSubtitleProvider
 
   let httpClient = httpClientFactory.CreateClient "BulgarianSubs"
 
+  // Per-provider timeout (10 seconds per request)
+  let requestTimeout = TimeSpan.FromSeconds(10.0)
+
+  // User-Agent for requests
+  let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
   // List of all available providers
-  let providers: IProvider list = [ SabBz(); Subsunacs(); YavkaNet() ]
+  let providers: IProvider list = [ SabBz(); Subsunacs(); YavkaNet(); Podnapisi() ]
+
+  // Generate provider name from list
+  let providerName =
+    let names = providers |> List.map (fun p -> p.Name)
+    let joined = String.Join(", ", names)
+    $"Bulgarian Subtitles ({joined})"
 
   // Helper to get the original title from library item
   let getOriginalTitle (mediaPath: string) =
@@ -86,7 +99,7 @@ type BulgarianSubtitleProvider
     }
 
   interface ISubtitleProvider with
-    member _.Name = "Bulgarian Subtitles (Sab.bz, Subsunacs & Yavka)"
+    member _.Name = providerName
 
     member _.SupportedMediaTypes =
       seq {
@@ -178,21 +191,55 @@ type BulgarianSubtitleProvider
                 try
                   logger.LogDebug($"[{provider.Name}] Making HTTP request...")
 
-                  let! response =
-                    try
-                      match provider.Name with
-                      | "Yavka.net" ->
-                        let content =
-                          new FormUrlEncodedContent(
-                            [ new KeyValuePair<string, string>("s", encodedSearchTerm)
-                              new KeyValuePair<string, string>("l", "BG") ]
-                          )
+                  // Create request with User-Agent and timeout
+                  use cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                  cts.CancelAfter(requestTimeout)
 
-                        httpClient.PostAsync(url, content, cancellationToken)
-                      | _ -> httpClient.GetAsync(url, cancellationToken)
-                    with httpEx ->
+                  let request =
+                    match provider.Name with
+                    | "Yavka.net" ->
+                      let req = new HttpRequestMessage(HttpMethod.Post, url)
+                      req.Headers.Add("User-Agent", userAgent)
+                      req.Headers.Add("Referer", "https://yavka.net/subtitles/")
+                      req.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                      req.Headers.Add("Accept-Language", "bg,en-US;q=0.7,en;q=0.3")
+                      req.Content <-
+                        new FormUrlEncodedContent(
+                          [ new KeyValuePair<string, string>("s", encodedSearchTerm)
+                            new KeyValuePair<string, string>("y", "")
+                            new KeyValuePair<string, string>("c", "")
+                            new KeyValuePair<string, string>("u", "")
+                            new KeyValuePair<string, string>("l", "BG")
+                            new KeyValuePair<string, string>("g", "")
+                            new KeyValuePair<string, string>("i", "")
+                            new KeyValuePair<string, string>("search", "\uf002 Търсене") ]
+                        )
+                      req
+                    | _ ->
+                      let req = new HttpRequestMessage(HttpMethod.Get, url)
+                      req.Headers.Add("User-Agent", userAgent)
+                      req
+
+                  let! responseOpt =
+                    try
+                      task {
+                        let! resp = httpClient.SendAsync(request, cts.Token)
+                        return Some resp
+                      }
+                    with
+                    | :? TaskCanceledException ->
+                      logger.LogWarning($"[{provider.Name}] Request timed out after {requestTimeout.TotalSeconds}s")
+                      Task.FromResult(None)
+                    | :? OperationCanceledException ->
+                      logger.LogWarning($"[{provider.Name}] Request cancelled")
+                      Task.FromResult(None)
+                    | httpEx ->
                       logger.LogDebug($"[{provider.Name}] HTTP Exception: {httpEx.Message}")
-                      reraise ()
+                      Task.FromResult(None)
+
+                  match responseOpt with
+                  | None -> ()
+                  | Some response ->
 
                   let! bytes = readResponseAsBytes response cancellationToken
                   logger.LogDebug($"[{provider.Name}] Response: {response.StatusCode}, {bytes.Length} bytes")
@@ -221,7 +268,10 @@ type BulgarianSubtitleProvider
                     info.Author <- item.Author |> Option.defaultValue ""
                     info.DownloadCount <- item.DownloadCount |> Option.defaultValue 0
                     info.DateCreated <- item.UploadDate |> Option.toNullable
-                    info.Comment <- $"[{item.ProviderName}]"
+                    info.Comment <-
+                      match item.InfoPageUrl with
+                      | Some url -> $"[{item.ProviderName}] {url}"
+                      | None -> $"[{item.ProviderName}]"
                     results.Add(info))
 
                 with ex ->
@@ -229,8 +279,15 @@ type BulgarianSubtitleProvider
             with ex ->
               logger.LogError(ex, $"Error searching {provider.Name}")
 
-          logger.LogInformation($"Search complete, found {results.Count} subtitles")
-          return results :> seq<RemoteSubtitleInfo>
+          // Sort by download count descending
+          let sortedResults =
+            results
+            |> Seq.sortByDescending (fun r ->
+              if r.DownloadCount.HasValue then r.DownloadCount.Value else 0)
+            |> Seq.toList
+
+          logger.LogInformation($"Search complete, found {sortedResults.Length} subtitles")
+          return sortedResults :> seq<RemoteSubtitleInfo>
       }
 
     member _.GetSubtitles(id: string, cancellationToken: CancellationToken) =
@@ -248,6 +305,7 @@ type BulgarianSubtitleProvider
             | "Subs.Sab.Bz" -> "http://subs.sab.bz/"
             | "Subsunacs" -> "https://subsunacs.net/"
             | "Yavka.net" -> "https://yavka.net/"
+            | "Podnapisi.net" -> "https://www.podnapisi.net/"
             | _ -> "http://localhost/"
 
           // Determine strategy - FormPage for Yavka, DirectUrl for others
