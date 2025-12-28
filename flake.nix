@@ -52,10 +52,8 @@
           };
         };
 
-        packages.default = pkgs.buildDotnetModule {
-          pname = "Jellyfin.Plugin.BulgarianSubs";
-          version = "1.0.0";
-
+        packages.default = let
+          version = "1.0.0.0";
           src = fs.toSource {
             root = ./.;
             fileset = fs.unions [
@@ -63,6 +61,15 @@
               ./Jellyfin.Plugin.BulgarianSubs.fsproj
             ];
           };
+          pluginGuid = let
+            pluginFs = builtins.readFile "${src}/src/Plugin.fs";
+            match = builtins.match ''.*Guid\.Parse\("([^"]+)"\).*'' pluginFs;
+          in
+            if match != null then builtins.head match else throw "Could not extract GUID from Plugin.fs";
+          targetAbi = "10.11.5.0";
+        in pkgs.buildDotnetModule {
+          pname = "Jellyfin.Plugin.BulgarianSubs";
+          inherit version src;
 
           projectFile = "Jellyfin.Plugin.BulgarianSubs.fsproj";
 
@@ -73,23 +80,55 @@
 
           executables = [];
 
-          JELLYFIN_PATH = "${pkgs.jellyfin}/lib/jellyfin";
+          nativeBuildInputs = [ pkgs.jq ];
+
+          env = {
+            JELLYFIN_PATH = "${pkgs.jellyfin}/lib/jellyfin";
+          };
 
           installPhase = ''
-            install -d -m 700 $out/BulgarianSubs_1.0.0.0
+            install -d -m 700 $out/BulgarianSubs_${version}
 
             # Copy only the plugin DLL and its actual dependencies (not Jellyfin's own DLLs)
-            install -m 600 bin/Release/net9.0/linux-x64/Jellyfin.Plugin.BulgarianSubs.dll $out/BulgarianSubs_1.0.0.0/
-            install -m 600 bin/Release/net9.0/linux-x64/FSharp.Core.dll $out/BulgarianSubs_1.0.0.0/
-            install -m 600 bin/Release/net9.0/linux-x64/HtmlAgilityPack.dll $out/BulgarianSubs_1.0.0.0/
-            install -m 600 bin/Release/net9.0/linux-x64/SharpCompress.dll $out/BulgarianSubs_1.0.0.0/
+            install -m 600 bin/Release/net9.0/linux-x64/Jellyfin.Plugin.BulgarianSubs.dll $out/BulgarianSubs_${version}/
+            install -m 600 bin/Release/net9.0/linux-x64/FSharp.Core.dll $out/BulgarianSubs_${version}/
+            install -m 600 bin/Release/net9.0/linux-x64/HtmlAgilityPack.dll $out/BulgarianSubs_${version}/
+            install -m 600 bin/Release/net9.0/linux-x64/SharpCompress.dll $out/BulgarianSubs_${version}/
 
-            install -m 600 ${./meta.json} $out/BulgarianSubs_1.0.0.0/meta.json
+            # Generate meta.json dynamically
+            jq -n \
+              --arg category "Subtitles" \
+              --arg description "Finds Bulgarian subtitles from multiple providers: Subs.Sab.Bz, Subsunacs, Yavka.net, and Podnapisi.net" \
+              --arg guid "${pluginGuid}" \
+              --arg name "Bulgarian Subtitles" \
+              --arg overview "Bulgarian subtitle provider with multiple sources" \
+              --arg owner "reo101" \
+              --arg targetAbi "${targetAbi}" \
+              --arg version "${version}" \
+              '{
+                category: $category,
+                description: $description,
+                guid: $guid,
+                name: $name,
+                overview: $overview,
+                owner: $owner,
+                targetAbi: $targetAbi,
+                version: $version,
+                status: "Active",
+                autoUpdate: false,
+                imagePath: "icon.png",
+                assemblies: [
+                  "Jellyfin.Plugin.BulgarianSubs.dll",
+                  "FSharp.Core.dll",
+                  "HtmlAgilityPack.dll",
+                  "SharpCompress.dll"
+                ]
+              }' > $out/BulgarianSubs_${version}/meta.json
 
             install -m 600 ${pkgs.fetchurl {
               url = "https://zamunda.net/pic/pic/z_icons/bgsubs.png";
               hash = "sha256-6WCRVR7KRYBEbPeynkGfIg5IlyTimrvDwINiaIdSMN4=";
-            }} $out/BulgarianSubs_1.0.0.0/jellyfin-plugin-bulgariansubs.png
+            }} $out/BulgarianSubs_${version}/icon.png
           '';
         };
 

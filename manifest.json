@@ -1,0 +1,11 @@
+[
+  {
+    "category": "Subtitles",
+    "guid": "93b5ed36-e282-4d55-9c49-0121203b7293",
+    "name": "Bulgarian Subtitles",
+    "description": "Finds Bulgarian subtitles from multiple providers: Subs.Sab.Bz, Subsunacs, Yavka.net, and Podnapisi.net",
+    "owner": "reo101",
+    "overview": "Bulgarian subtitle provider with multiple sources",
+    "versions": []
+  }
+]
