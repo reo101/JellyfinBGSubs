@@ -43,9 +43,11 @@ module MetadataExtractor =
           let yearMatch = yearPattern.Match(fileName)
 
           if yearMatch.Success then
-            let title = yearMatch.Groups.[1].Value
+            let matchGroups = yearMatch.Groups
+            let title = matchGroups.[1].Value
             // Replace dots, underscores with spaces and clean up
-            let cleanTitle = Regex.Replace(title, @"[._]", " ").Trim()
+            let withoutDots: string = Regex.Replace(title, @"[._]", " ")
+            let cleanTitle = withoutDots.Trim()
 
             if not (String.IsNullOrWhiteSpace cleanTitle) then
               Some cleanTitle

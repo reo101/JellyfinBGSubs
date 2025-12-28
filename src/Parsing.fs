@@ -3,12 +3,12 @@ namespace Jellyfin.Plugin.BulgarianSubs
 open System
 open ComputationExpressions
 
+
 module Parsing =
 
   // Bulgarian month names
   let private bulgarianMonths =
-    [| ""
-       "Jan"
+    [| "Jan"
        "Feb"
        "Mar"
        "Apr"
@@ -46,14 +46,16 @@ module Parsing =
                   | true, v -> Some v
                   | _ -> None
 
-              let! idx =
+              let! month =
                 bulgarianMonths
                 |> Array.tryFindIndex (fun m -> m.Equals(parts.[1], StringComparison.OrdinalIgnoreCase))
+                |> Option.map (fun idx -> idx - 1)
 
-              if idx > 0 then return (day, idx, year) else return! None
+              return (day, month, year)
             }
             |> Option.map (fun (day, month, year) ->
               let baseDate = DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc)
+              // NOTE: Bulgarian timezone
               baseDate.AddHours(2.0))
       with _ ->
         None

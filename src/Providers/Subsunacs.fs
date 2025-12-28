@@ -6,7 +6,7 @@ open System.Text.RegularExpressions
 open HtmlAgilityPack
 open Jellyfin.Plugin.BulgarianSubs
 
-module SubsunuacsImpl =
+module SubsunacsImpl =
 
   let private clean (s: string) =
     if String.IsNullOrWhiteSpace s then "" else s.Trim()
@@ -117,4 +117,4 @@ type Subsunacs() =
 
     member _.CreateDownloadStrategy(url: string) : DownloadStrategy = DirectUrl(url, referer)
 
-    member _.ParseResults(html: string) : InternalSubtitleInfo seq = SubsunuacsImpl.parseSearchResults html
+    member _.ParseResults(html: string) : InternalSubtitleInfo seq = SubsunacsImpl.parseSearchResults html

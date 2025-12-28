@@ -8,7 +8,6 @@ open System.Text
 open System.Threading
 open Microsoft.Extensions.Logging
 open MediaBrowser.Controller.Subtitles
-open MediaBrowser.Controller.Library
 open Jellyfin.Plugin.BulgarianSubs.Providers
 
 // Simple logging implementation for debugging
@@ -157,7 +156,7 @@ let testSearchSubsunacs (movieName: string) (year: int option) =
         let encoding = System.Text.Encoding.GetEncoding("windows-1251")
         let html = encoding.GetString(bytes)
 
-        let internalResults = SubsunuacsImpl.parseSearchResults html |> Seq.toList
+        let internalResults = SubsunacsImpl.parseSearchResults html |> Seq.toList
 
         if internalResults.IsEmpty then
           printfn "\n✅ No results found from Subsunacs"

@@ -33,11 +33,28 @@ type BulgarianSubtitleProvider
   let userAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-  // List of all available providers
-  let providers: IProvider list = [ SabBz(); Subsunacs(); YavkaNet(); Podnapisi() ]
+  // All available providers (map is created once)
+  let allProvidersMap = [
+    ("Subs.Sab.Bz", SabBz() :> IProvider)
+    ("Subsunacs", Subsunacs() :> IProvider)
+    ("Yavka.net", YavkaNet() :> IProvider)
+    ("Podnapisi.net", Podnapisi() :> IProvider)
+  ]
 
-  // Generate provider name from list
-  let providerName =
+  // Get enabled providers based on current configuration
+  let getEnabledProviders (config: PluginConfiguration) : IProvider list =
+    allProvidersMap
+    |> List.filter (fun (name, _) ->
+      match name with
+      | "Subs.Sab.Bz" -> config.EnableSabBz
+      | "Subsunacs" -> config.EnableSubsunacs
+      | "Yavka.net" -> config.EnableYavkaNet
+      | "Podnapisi.net" -> config.EnablePodnapisi
+      | _ -> true)
+    |> List.map snd
+
+  // Generate provider name from a list of providers
+  let getProviderName (providers: IProvider list) =
     let names = providers |> List.map (fun p -> p.Name)
     let joined = String.Join(", ", names)
     $"Bulgarian Subtitles ({joined})"
@@ -94,7 +111,10 @@ type BulgarianSubtitleProvider
     }
 
   interface ISubtitleProvider with
-    member _.Name = providerName
+    member _.Name =
+      let config = PluginConfiguration()
+      let providers = getEnabledProviders config
+      getProviderName providers
 
     member _.SupportedMediaTypes =
       seq {
@@ -105,6 +125,10 @@ type BulgarianSubtitleProvider
     member _.Search(request: SubtitleSearchRequest, cancellationToken: CancellationToken) =
       task {
         logger.LogInformation($"Search called for {request.Name}, language={request.Language}")
+
+        // Get enabled providers from current configuration
+        let config = PluginConfiguration()
+        let providers = getEnabledProviders config
 
         // Extract metadata from Jellyfin library
         let metadata = MetadataExtractor.extract request
@@ -173,6 +197,8 @@ type BulgarianSubtitleProvider
           let variationsStr = searchVariations |> String.concat ", "
           logger.LogDebug($"Search variations: {variationsStr}")
           logger.LogDebug($"About to search {providers.Length} providers with {searchVariations.Length} variations")
+
+          let providerName = getProviderName providers
 
           for provider in providers do
             try
@@ -275,6 +301,9 @@ type BulgarianSubtitleProvider
     member _.GetSubtitles(id: string, cancellationToken: CancellationToken) =
       task {
         logger.LogInformation($"GetSubtitles called with id: {id}")
+
+        let config = PluginConfiguration()
+        let providers = getEnabledProviders config
 
         let parts = id.Split("::", 2, StringSplitOptions.None)
 

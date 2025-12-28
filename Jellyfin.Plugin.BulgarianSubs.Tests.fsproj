@@ -15,6 +15,7 @@
     <Reference Include="$(JELLYFIN_PATH)/MediaBrowser.Model.dll" />
     <Reference Include="$(JELLYFIN_PATH)/MediaBrowser.Controller.dll" />
     <Reference Include="$(JELLYFIN_PATH)/MediaBrowser.Common.dll" />
+    <Reference Include="$(JELLYFIN_PATH)/Jellyfin.Data.dll" />
     <Reference Include="$(JELLYFIN_PATH)/Microsoft.Extensions.Logging.Abstractions.dll" />
     <Reference Include="$(JELLYFIN_PATH)/Microsoft.Extensions.DependencyInjection.Abstractions.dll" />
     <Reference Include="$(JELLYFIN_PATH)/Microsoft.Extensions.Http.dll" />
