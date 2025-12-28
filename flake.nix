@@ -19,8 +19,8 @@
 
       # Single source of truth for plugin metadata
       pluginGuid = "93b5ed36-e282-4d55-9c49-0121203b7293";
-      pluginVersion = "1.0.0.0";
-      targetAbi = "10.11.5.0";
+      # Plugin version tracks Jellyfin version with our patch version appended
+      pluginPatchVersion = "0";
       pluginRepo = "reo101/JellyfinBGSubs";
 
       pluginSrc = let
@@ -61,7 +61,12 @@
         pkgs,
         lib,
         ...
-      }: {
+      }: let
+        # Derive version from Jellyfin: "10.11.5" -> "10.11.5.0"
+        jellyfinVersion = pkgs.jellyfin.version;
+        pluginVersion = "${jellyfinVersion}.${pluginPatchVersion}";
+        targetAbi = "${jellyfinVersion}.0";
+      in {
         treefmt.config = {
           projectRootFile = "flake.nix";
           programs = {
@@ -151,7 +156,9 @@
           '';
         };
 
-        packages.zip =
+        packages.zip = let
+          pluginDir = "BulgarianSubs_${pluginVersion}";
+        in
           pkgs.runCommand "bulgariansubs-${pluginVersion}.zip" {
             nativeBuildInputs = [
               pkgs.zip
@@ -166,11 +173,11 @@
             cd /tmp/build
 
             # Normalize mtimes (earliest ZIP-safe timestamp)
-            find BulgarianSubs_1.0.0.0 -exec touch -t 198001010000.00 {} +
+            find ${pluginDir} -exec touch -t 198001010000.00 {} +
 
             # Build deterministic zip with sorted files
-            zip -X -o -9 "$out" BulgarianSubs_1.0.0.0
-            find BulgarianSubs_1.0.0.0 -type f -print0 \
+            zip -X -o -9 "$out" ${pluginDir}
+            find ${pluginDir} -type f -print0 \
               | sort -z \
               | xargs -0 zip -X -o -9 "$out"
           '';
