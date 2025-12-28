@@ -48,6 +48,7 @@
         "FSharp.Core.dll"
         "HtmlAgilityPack.dll"
         "SharpCompress.dll"
+        "ZstdSharp.dll"
       ];
     in {
       imports = [

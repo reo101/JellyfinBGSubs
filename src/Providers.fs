@@ -42,26 +42,21 @@ type BulgarianSubtitleProvider
     let joined = String.Join(", ", names)
     $"Bulgarian Subtitles ({joined})"
 
+  let nonEmpty = Option.ofObj >> Option.filter (not << String.IsNullOrEmpty)
+
   // Helper to get the original title from library item
   let getOriginalTitle (mediaPath: string) =
     try
-      if String.IsNullOrEmpty(mediaPath) then
-        None
-      else
-        let item = libraryManager.FindByPath(mediaPath, Nullable())
+      option {
+        let! path = nonEmpty mediaPath
+
+        let item = libraryManager.FindByPath(path, Nullable())
 
         match item with
-        | :? Movie as movie ->
-          if not (String.IsNullOrEmpty(movie.OriginalTitle)) then
-            Some movie.OriginalTitle
-          else
-            None
-        | :? Episode as episode ->
-          if not (String.IsNullOrEmpty(episode.Series.OriginalTitle)) then
-            Some episode.Series.OriginalTitle
-          else
-            None
-        | _ -> None
+        | :? Movie as m -> return! nonEmpty m.OriginalTitle
+        | :? Episode as e -> return! nonEmpty e.Series.OriginalTitle
+        | _ -> return! None
+      }
     with ex ->
       logger.LogDebug($"Could not get original title: {ex.Message}")
       None
@@ -235,12 +230,15 @@ type BulgarianSubtitleProvider
                     |> Seq.iter (fun item ->
                       let info = RemoteSubtitleInfo()
 
+                      let encodeUrl (u: string) =
+                        Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(u))
+
                       match item.DownloadStrategy with
-                      | DirectUrl(url, _) -> info.Id <- $"{provider.Name}|{url}"
-                      | FormPage(pageUrl, _) -> info.Id <- $"{provider.Name}|{pageUrl}"
+                      | DirectUrl(url, _) -> info.Id <- $"{provider.Name}::{encodeUrl url}"
+                      | FormPage(pageUrl, _) -> info.Id <- $"{provider.Name}::{encodeUrl pageUrl}"
 
                       info.Name <- item.Title
-                      info.ProviderName <- "Bulgarian Subtitles"
+                      info.ProviderName <- providerName
                       info.ThreeLetterISOLanguageName <- "bul"
                       info.Format <- item.Format |> Option.defaultValue ""
                       info.Author <- item.Author |> Option.defaultValue ""
@@ -277,26 +275,48 @@ type BulgarianSubtitleProvider
 
     member _.GetSubtitles(id: string, cancellationToken: CancellationToken) =
       task {
-        let parts = id.Split('|')
+        logger.LogInformation($"GetSubtitles called with id: {id}")
+
+        let parts = id.Split("::", 2, StringSplitOptions.None)
 
         if parts.Length < 2 then
+          logger.LogWarning($"Invalid subtitle ID format: {id}")
           return SubtitleResponse()
         else
-          let providerName, url = parts.[0], parts.[1]
+          let providerName = parts.[0]
+
+          let url =
+            try
+              System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(parts.[1]))
+            with _ ->
+              logger.LogWarning($"Failed to decode base64 URL, using raw: {parts.[1]}")
+              parts.[1]
+
+          logger.LogInformation($"Provider={providerName}, URL={url}")
 
           let providerOpt = providers |> List.tryFind (fun p -> p.Name = providerName)
 
           let strategy =
             match providerOpt with
-            | Some provider -> provider.CreateDownloadStrategy url
-            | None -> DirectUrl(url, "http://localhost/")
+            | Some provider ->
+              logger.LogInformation($"Found provider {provider.Name}")
+              provider.CreateDownloadStrategy url
+            | None ->
+              logger.LogWarning($"Provider '{providerName}' not found, using fallback")
+              DirectUrl(url, "http://localhost/")
 
-          let! (subStream, ext) =
-            Common.executeStrategy strategy httpClient cancellationToken Common.extractSubtitleStream
+          try
+            let! (subStream, ext) =
+              Common.executeStrategy strategy httpClient cancellationToken (Common.extractSubtitleStreamWithLogging logger)
 
-          let result = SubtitleResponse()
-          result.Format <- ext
-          result.Stream <- subStream
-          result.Language <- "bul"
-          return result
+            logger.LogInformation($"Downloaded subtitle, format={ext}, stream length={subStream.Length}")
+
+            let result = SubtitleResponse()
+            result.Format <- ext
+            result.Stream <- subStream
+            result.Language <- "bul"
+            return result
+          with ex ->
+            logger.LogError(ex, $"Error downloading subtitle: {ex.Message}")
+            return SubtitleResponse()
       }

@@ -83,8 +83,7 @@ module SubsunuacsImpl =
 
               let downloads = tryParseInt cells.[6].InnerText
 
-              let downloadUrl = "https://subsunacs.net/getentry.php?id=" + idValue + "&ei=0"
-              let infoPageUrl = href
+              let downloadUrl = $"https://subsunacs.net{href}"
 
               Some
                 { Id = idValue
@@ -95,9 +94,9 @@ module SubsunuacsImpl =
                   DownloadCount = downloads
                   FrameRate = fps
                   Rating = rating
-                  DownloadStrategy = DirectUrl(downloadUrl, "https://subsunacs.net/")
+                  DownloadStrategy = DirectUrl(downloadUrl, "https://subsunacs.net/search.php")
                   UploadDate = uploadDate
-                  InfoPageUrl = Some $"https://subsunacs.net{infoPageUrl}" })
+                  InfoPageUrl = Some downloadUrl })
     with _ ->
       Seq.empty
 

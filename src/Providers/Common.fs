@@ -5,6 +5,7 @@ open System.IO
 open System.Net.Http
 open System.Threading
 open SharpCompress.Archives
+open Microsoft.Extensions.Logging
 open Jellyfin.Plugin.BulgarianSubs
 
 /// Common provider utilities
@@ -59,38 +60,57 @@ module Common =
     name.EndsWith ".srt" || name.EndsWith ".sub"
 
   /// Extract subtitle stream from response (archive or plain file)
-  let extractSubtitleStream (responseStream: Stream) (_fileExtension: string) : Stream * string =
+  let extractSubtitleStreamWithLogging
+    (logger: ILogger)
+    (responseStream: Stream)
+    (_fileExtension: string)
+    : Stream * string =
+    logger.LogInformation($"extractSubtitleStream: stream length={responseStream.Length}, position={responseStream.Position}")
+
     // Check if it's a plain text file (uncompressed subtitle) or an archive
     let archiveFormat = detectArchiveFormat responseStream
+    logger.LogInformation($"extractSubtitleStream: detected format={archiveFormat}")
 
     match archiveFormat with
-    | Some _ ->
+    | Some fmt ->
       try
+        logger.LogInformation($"extractSubtitleStream: opening archive with format {fmt}")
         use archive = ArchiveFactory.Open(responseStream)
         // Find first entry that ends with .srt or .sub
-        let entry =
-          archive.Entries
-          |> Seq.filter (fun e -> not e.IsDirectory)
-          |> Seq.tryFind (fun e -> isSubtitleFile e.Key)
+        let entries = archive.Entries |> Seq.filter (fun e -> not e.IsDirectory) |> Seq.toList
+        logger.LogInformation($"extractSubtitleStream: archive has {entries.Length} entries")
+
+        for e in entries do
+          logger.LogInformation($"extractSubtitleStream: entry={e.Key}")
+
+        let entry = entries |> List.tryFind (fun e -> isSubtitleFile e.Key)
 
         match entry with
         | Some e ->
+          logger.LogInformation($"extractSubtitleStream: extracting {e.Key}")
           let ms = new MemoryStream()
           e.WriteTo ms
           ms.Position <- 0L
           // HACK: fsautocomplete type inference bug - see FSAUTOCOMPLETE_BUGS.md
           //       `Path.GetExtension(e.Key).TrimStart('.')` causes infinite loop
           let ext = Path.GetExtension e.Key |> fun s -> s.TrimStart '.'
+          logger.LogInformation($"extractSubtitleStream: extracted {ms.Length} bytes, ext={ext}")
           ms :> Stream, ext
         | None ->
+          logger.LogWarning("extractSubtitleStream: no subtitle file found in archive")
           // If no subtitle found in archive, return empty
           Stream.Null, "srt"
       with ex ->
+        logger.LogError(ex, $"extractSubtitleStream: archive error: {ex.Message}")
         Stream.Null, "srt"
     | None ->
       // Not an archive, return as-is (plain SRT/SUB file)
+      // Copy to MemoryStream to ensure it's seekable and won't be disposed
+      let ms = new MemoryStream()
+      responseStream.CopyTo(ms)
+      ms.Position <- 0L
       // Use detected extension or fallback to "srt"
-      responseStream,
+      ms :> Stream,
       if String.IsNullOrEmpty(_fileExtension) then
         "srt"
       else
@@ -162,8 +182,12 @@ module Common =
           with _ ->
             "srt"
 
-        let! stream = response.Content.ReadAsStreamAsync(cancellationToken)
-        return extractSubtitleStream stream detectedExt
+        let! responseStream = response.Content.ReadAsStreamAsync(cancellationToken)
+        // Copy to MemoryStream to make it seekable (required for archive detection)
+        let ms = new MemoryStream()
+        do! responseStream.CopyToAsync(ms, cancellationToken)
+        ms.Position <- 0L
+        return extractSubtitleStream ms detectedExt
 
       | FormPage(pageUrl, referer) ->
         // Step 1: GET the subtitle page to extract form parameters
@@ -217,6 +241,10 @@ module Common =
             with _ ->
               "srt"
 
-          let! stream = downloadResponse.Content.ReadAsStreamAsync(cancellationToken)
-          return extractSubtitleStream stream detectedExt
+          let! responseStream = downloadResponse.Content.ReadAsStreamAsync(cancellationToken)
+          // Copy to MemoryStream to make it seekable (required for archive detection)
+          let ms = new MemoryStream()
+          do! responseStream.CopyToAsync(ms, cancellationToken)
+          ms.Position <- 0L
+          return extractSubtitleStream ms detectedExt
     }
