@@ -16,6 +16,11 @@ module SubsunuacsImpl =
     | true, v -> Some v
     | _ -> None
 
+  let private tryParseFloat (s: string) =
+    match System.Double.TryParse(clean s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture) with
+    | true, v -> Some v
+    | _ -> None
+
   let private extractFormat (tooltip: string) =
     let m = Regex.Match(tooltip, @"Формат:\s*&lt;/b&gt;(\w+)", RegexOptions.IgnoreCase)
     if m.Success then Some(m.Groups.[1].Value.ToLowerInvariant()) else None
@@ -56,6 +61,8 @@ module SubsunuacsImpl =
                     None
 
               let format = extractFormat tooltipStr
+              let fps = tryParseFloat cells.[2].InnerText
+              let rating = tryParseFloat cells.[3].InnerText
               let uploaderNode = cells.[5].SelectSingleNode(".//a")
               let author = if uploaderNode <> null then Some(clean uploaderNode.InnerText) else None
               let downloads = tryParseInt cells.[6].InnerText
@@ -70,6 +77,8 @@ module SubsunuacsImpl =
                   Format = format
                   Author = author
                   DownloadCount = downloads
+                  FrameRate = fps
+                  Rating = rating
                   DownloadStrategy = DirectUrl(downloadUrl, "https://subsunacs.net/")
                   UploadDate = uploadDate
                   InfoPageUrl = Some $"https://subsunacs.net{infoPageUrl}" })

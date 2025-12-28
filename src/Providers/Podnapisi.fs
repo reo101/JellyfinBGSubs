@@ -16,6 +16,11 @@ module PodnapisiImpl =
     | true, v -> Some v
     | _ -> None
 
+  let private tryParseFloat (s: string) =
+    match System.Double.TryParse(clean s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture) with
+    | true, v -> Some v
+    | _ -> None
+
   let private tryParseDate (s: string) =
     if String.IsNullOrWhiteSpace s then
       None
@@ -55,7 +60,7 @@ module PodnapisiImpl =
               |> Option.defaultValue "Unknown"
 
             let downloads = getNodeText "downloads" |> Option.bind tryParseInt
-            let rating = getNodeText "rating"
+            let rating = getNodeText "rating" |> Option.bind tryParseFloat
             let urlPath = getNodeText "url"
 
             let downloadUrl = $"https://www.podnapisi.net/subtitles/{pid}/download"
@@ -71,6 +76,8 @@ module PodnapisiImpl =
                 Format = Some "srt"
                 Author = None
                 DownloadCount = downloads
+                FrameRate = None
+                Rating = rating
                 DownloadStrategy = DirectUrl(downloadUrl, "https://www.podnapisi.net/")
                 UploadDate = None
                 InfoPageUrl = Some infoPageUrl })

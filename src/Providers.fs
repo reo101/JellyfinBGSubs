@@ -244,6 +244,8 @@ type BulgarianSubtitleProvider
                     info.Format <- item.Format |> Option.defaultValue ""
                     info.Author <- item.Author |> Option.defaultValue ""
                     info.DownloadCount <- item.DownloadCount |> Option.defaultValue 0
+                    info.FrameRate <- item.FrameRate |> Option.map float32 |> Option.toNullable
+                    info.CommunityRating <- item.Rating |> Option.map float32 |> Option.toNullable
                     info.DateCreated <- item.UploadDate |> Option.toNullable
                     info.Comment <-
                       match item.InfoPageUrl with

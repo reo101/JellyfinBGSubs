@@ -13,6 +13,8 @@ type InternalSubtitleInfo =
     Format: string option
     Author: string option
     DownloadCount: int option
+    FrameRate: float option
+    Rating: float option
     DownloadStrategy: DownloadStrategy
     UploadDate: System.DateTime option
     InfoPageUrl: string option }

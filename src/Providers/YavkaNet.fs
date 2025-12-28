@@ -95,6 +95,11 @@ module YavkaNetImpl =
     | true, v -> Some v
     | _ -> None
 
+  let private tryParseFloat (s: string) =
+    match System.Double.TryParse(s.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture) with
+    | true, v -> Some v
+    | _ -> None
+
   /// Convert search results to internal subtitle info format
   /// Stores page URL in FormPage strategy for later extraction of form params
   let resultsToSubtitleInfo (results: YavkaSearchResult list) : InternalSubtitleInfo list =
@@ -110,6 +115,8 @@ module YavkaNetImpl =
           else
             Some r.Uploader
         DownloadCount = tryParseInt r.Downloads
+        FrameRate = tryParseFloat r.Fps
+        Rating = None
         DownloadStrategy = FormPage(r.PageUrl, "https://yavka.net/")
         UploadDate = None
         InfoPageUrl = Some r.PageUrl })

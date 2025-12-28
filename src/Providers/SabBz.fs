@@ -22,6 +22,11 @@ module SabBzImpl =
     | true, v -> Some v
     | _ -> None
 
+  let private tryParseFloat (s: string) =
+    match System.Double.TryParse(clean s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture) with
+    | true, v -> Some v
+    | _ -> None
+
   let private extractFormat (tooltip: string) =
     let m = Regex.Match(tooltip, @"<b>Формат</b>:\s*(\w+)", RegexOptions.IgnoreCase)
 
@@ -75,6 +80,7 @@ module SabBzImpl =
 
               let uploadDate = Parsing.tryParseBulgarianDate (clean cells.[4].InnerText)
               let format = extractFormat tooltip
+              let fps = tryParseFloat cells.[7].InnerText
               let uploaderNode = cells.[8].SelectSingleNode(".//a")
 
               let author =
@@ -94,6 +100,8 @@ module SabBzImpl =
                   Format = format
                   Author = author
                   DownloadCount = downloads
+                  FrameRate = fps
+                  Rating = None
                   DownloadStrategy = DirectUrl(downloadUrl href, "http://subs.sab.bz/")
                   UploadDate = uploadDate
                   InfoPageUrl = Some infoPageUrl })
