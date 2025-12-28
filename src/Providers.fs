@@ -249,7 +249,7 @@ type BulgarianSubtitleProvider
                     info.DateCreated <- item.UploadDate |> Option.toNullable
                     info.Comment <-
                       match item.InfoPageUrl with
-                      | Some url -> $"[{item.ProviderName}] {url}"
+                      | Some url -> $"[{item.ProviderName}]\n{url}"
                       | None -> $"[{item.ProviderName}]"
                     results.Add(info))
 

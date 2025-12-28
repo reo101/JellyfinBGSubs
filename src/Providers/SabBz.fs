@@ -91,7 +91,7 @@ module SabBzImpl =
 
               let downloads = tryParseInt cells.[10].InnerText
 
-              let infoPageUrl = $"http://subs.sab.bz/index.php?act=sinfo&attach_id={idValue}"
+              let infoPageUrl = $"http://subs.sab.bz/index.php?act=details&sid={idValue}&type=comment"
 
               Some
                 { Id = idValue
