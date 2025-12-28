@@ -1,6 +1,7 @@
 namespace Jellyfin.Plugin.BulgarianSubs.Providers
 
 open System
+open System.Net.Http
 open System.Text.RegularExpressions
 open System.Xml
 open Jellyfin.Plugin.BulgarianSubs
@@ -79,11 +80,20 @@ module PodnapisiImpl =
 /// Podnapisi.net subtitle provider implementation
 /// Uses XML API for search, direct download for subtitles
 type Podnapisi() =
+  static let referer = "https://www.podnapisi.net/"
+
   interface IProvider with
     member _.Name = "Podnapisi.net"
+    member _.Referer = referer
 
     member _.SearchUrl (query: string) (year: int option) : string =
       let yearParam = year |> Option.map (fun y -> $"&sY={y}") |> Option.defaultValue ""
       $"https://www.podnapisi.net/subtitles/search/old?sXML=1&sL=bg&sK={query}{yearParam}"
+
+    member _.CreateSearchRequest (url: string) (_searchTerm: string) : HttpRequestMessage =
+      new HttpRequestMessage(HttpMethod.Get, url)
+
+    member _.CreateDownloadStrategy (url: string) : DownloadStrategy =
+      DirectUrl(url, referer)
 
     member _.ParseResults(xml: string) : InternalSubtitleInfo seq = PodnapisiImpl.parseSearchResults xml

@@ -2,6 +2,8 @@ namespace Jellyfin.Plugin.BulgarianSubs.Providers
 
 open HtmlAgilityPack
 open System
+open System.Collections.Generic
+open System.Net.Http
 open System.Text.RegularExpressions
 open Jellyfin.Plugin.BulgarianSubs
 
@@ -115,10 +117,34 @@ module YavkaNetImpl =
 /// Yavka.net subtitle provider implementation
 /// Handles 3-step flow: POST search → GET page → extract form → POST download
 type YavkaNet() =
+  static let referer = "https://yavka.net/"
+
   interface IProvider with
     member _.Name = "Yavka.net"
+    member _.Referer = referer
 
     member _.SearchUrl (_query: string) (_year: int option) : string = "https://yavka.net/search"
+
+    member _.CreateSearchRequest (url: string) (searchTerm: string) : HttpRequestMessage =
+      let req = new HttpRequestMessage(HttpMethod.Post, url)
+      req.Headers.Add("Referer", "https://yavka.net/subtitles/")
+      req.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+      req.Headers.Add("Accept-Language", "bg,en-US;q=0.7,en;q=0.3")
+      req.Content <-
+        new FormUrlEncodedContent(
+          [ new KeyValuePair<string, string>("s", searchTerm)
+            new KeyValuePair<string, string>("y", "")
+            new KeyValuePair<string, string>("c", "")
+            new KeyValuePair<string, string>("u", "")
+            new KeyValuePair<string, string>("l", "BG")
+            new KeyValuePair<string, string>("g", "")
+            new KeyValuePair<string, string>("i", "")
+            new KeyValuePair<string, string>("search", "\uf002 Търсене") ]
+        )
+      req
+
+    member _.CreateDownloadStrategy (url: string) : DownloadStrategy =
+      FormPage(url, referer)
 
     member _.ParseResults(html: string) : InternalSubtitleInfo seq =
       YavkaNetImpl.parseSearchResults html

@@ -1,6 +1,7 @@
 namespace Jellyfin.Plugin.BulgarianSubs.Providers
 
 open System
+open System.Net.Http
 open System.Text.RegularExpressions
 open HtmlAgilityPack
 open Jellyfin.Plugin.BulgarianSubs
@@ -101,11 +102,20 @@ module SabBzImpl =
 
 /// Subs.Sab.Bz subtitle provider
 type SabBz() =
+  static let referer = "http://subs.sab.bz/"
+
   interface IProvider with
     member _.Name = "Subs.Sab.Bz"
+    member _.Referer = referer
 
     member _.SearchUrl (query: string) (year: int option) : string =
       let yearParam = year |> Option.map (fun y -> $"&yr={y}") |> Option.defaultValue ""
       $"http://subs.sab.bz/index.php?act=search&movie={query}{yearParam}"
+
+    member _.CreateSearchRequest (url: string) (_searchTerm: string) : HttpRequestMessage =
+      new HttpRequestMessage(HttpMethod.Get, url)
+
+    member _.CreateDownloadStrategy (url: string) : DownloadStrategy =
+      DirectUrl(url, referer)
 
     member _.ParseResults(html: string) : InternalSubtitleInfo seq = SabBzImpl.parseSearchResults html

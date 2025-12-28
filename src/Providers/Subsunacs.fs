@@ -1,6 +1,7 @@
 namespace Jellyfin.Plugin.BulgarianSubs.Providers
 
 open System
+open System.Net.Http
 open System.Text.RegularExpressions
 open HtmlAgilityPack
 open Jellyfin.Plugin.BulgarianSubs
@@ -77,11 +78,20 @@ module SubsunuacsImpl =
 
 /// Subsunacs.net subtitle provider
 type Subsunacs() =
+  static let referer = "https://subsunacs.net/"
+
   interface IProvider with
     member _.Name = "Subsunacs"
+    member _.Referer = referer
 
     member _.SearchUrl (query: string) (year: int option) : string =
       let yearParam = year |> Option.map (fun y -> $"&y={y}") |> Option.defaultValue ""
       $"https://subsunacs.net/search.php?m={query}{yearParam}&t=Submit"
+
+    member _.CreateSearchRequest (url: string) (_searchTerm: string) : HttpRequestMessage =
+      new HttpRequestMessage(HttpMethod.Get, url)
+
+    member _.CreateDownloadStrategy (url: string) : DownloadStrategy =
+      DirectUrl(url, referer)
 
     member _.ParseResults(html: string) : InternalSubtitleInfo seq = SubsunuacsImpl.parseSearchResults html

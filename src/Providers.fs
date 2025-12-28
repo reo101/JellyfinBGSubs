@@ -1,7 +1,6 @@
 namespace Jellyfin.Plugin.BulgarianSubs
 
 open System
-open System.Collections.Generic
 open System.Net.Http
 open System.Text
 open System.Threading
@@ -195,30 +194,8 @@ type BulgarianSubtitleProvider
                   use cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
                   cts.CancelAfter(requestTimeout)
 
-                  let request =
-                    match provider.Name with
-                    | "Yavka.net" ->
-                      let req = new HttpRequestMessage(HttpMethod.Post, url)
-                      req.Headers.Add("User-Agent", userAgent)
-                      req.Headers.Add("Referer", "https://yavka.net/subtitles/")
-                      req.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                      req.Headers.Add("Accept-Language", "bg,en-US;q=0.7,en;q=0.3")
-                      req.Content <-
-                        new FormUrlEncodedContent(
-                          [ new KeyValuePair<string, string>("s", encodedSearchTerm)
-                            new KeyValuePair<string, string>("y", "")
-                            new KeyValuePair<string, string>("c", "")
-                            new KeyValuePair<string, string>("u", "")
-                            new KeyValuePair<string, string>("l", "BG")
-                            new KeyValuePair<string, string>("g", "")
-                            new KeyValuePair<string, string>("i", "")
-                            new KeyValuePair<string, string>("search", "\uf002 Търсене") ]
-                        )
-                      req
-                    | _ ->
-                      let req = new HttpRequestMessage(HttpMethod.Get, url)
-                      req.Headers.Add("User-Agent", userAgent)
-                      req
+                  let request = provider.CreateSearchRequest url encodedSearchTerm
+                  request.Headers.Add("User-Agent", userAgent)
 
                   let! responseOpt =
                     try
@@ -299,21 +276,11 @@ type BulgarianSubtitleProvider
         else
           let providerName, url = parts.[0], parts.[1]
 
-          // Reconstruct the download strategy based on provider
-          let referer =
-            match providerName with
-            | "Subs.Sab.Bz" -> "http://subs.sab.bz/"
-            | "Subsunacs" -> "https://subsunacs.net/"
-            | "Yavka.net" -> "https://yavka.net/"
-            | "Podnapisi.net" -> "https://www.podnapisi.net/"
-            | _ -> "http://localhost/"
-
-          // Determine strategy - FormPage for Yavka, DirectUrl for others
+          let providerOpt = providers |> List.tryFind (fun p -> p.Name = providerName)
           let strategy =
-            if providerName = "Yavka.net" then
-              FormPage(url, referer)
-            else
-              DirectUrl(url, referer)
+            match providerOpt with
+            | Some provider -> provider.CreateDownloadStrategy url
+            | None -> DirectUrl(url, "http://localhost/")
 
           let! (subStream, ext) =
             Common.executeStrategy strategy httpClient cancellationToken Common.extractSubtitleStream
