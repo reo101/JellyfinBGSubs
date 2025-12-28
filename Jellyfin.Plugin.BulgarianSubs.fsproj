@@ -17,6 +17,7 @@
     <Reference Include="$(JELLYFIN_PATH)/Microsoft.Extensions.Http.dll" />
     <PackageReference Include="HtmlAgilityPack" Version="1.11.54" />
     <PackageReference Include="SharpCompress" Version="0.36.0" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.7.4" />
   </ItemGroup>
 
   <ItemGroup>

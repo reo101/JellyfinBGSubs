@@ -155,7 +155,6 @@ type BulgarianSubtitleProvider
           let fileTitleStr = metadata.FileBasedTitle |> Option.defaultValue "(none)"
           logger.LogDebug($"File-based title: {fileTitleStr}")
           let results = System.Collections.Generic.List<RemoteSubtitleInfo>()
-          let searchTerm = System.Net.WebUtility.UrlEncode searchName
 
           let year =
             if request.ProductionYear.HasValue then

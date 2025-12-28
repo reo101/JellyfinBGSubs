@@ -63,16 +63,6 @@ check:
 # Full CI (format + check + build + test)
 ci: fmt check build-all test
 
-# === RELEASE ===
-
-# Publish release binary and create plugin package
-publish: build-release
-    dotnet publish -c Release -r linux-x64
-    mkdir -p ~/.local/share/jellyfin/plugins/BulgarianSubs_1.0.0.0
-    cp bin/Release/net9.0/linux-x64/Jellyfin.Plugin.BulgarianSubs.dll ~/.local/share/jellyfin/plugins/BulgarianSubs_1.0.0.0/
-    cp meta.json ~/.local/share/jellyfin/plugins/BulgarianSubs_1.0.0.0/
-    @echo "✅ Plugin installed to ~/.local/share/jellyfin/plugins/BulgarianSubs_1.0.0.0/"
-
 # === HELP ===
 
 # Show all available targets

@@ -631,11 +631,26 @@ let runAllTests () =
     // Metadata extractor tests
     MetadataExtractorTests.runTests ()
 
-    printfn "\n✅ All tests passed!"
+    printfn "\n✅ All unit tests passed!"
     0
   with ex ->
     printfn "\n❌ Test failed: %s" ex.Message
     1
 
+let runDownloadTests () =
+  DownloadIntegrationTests.runTests ()
+  |> Async.AwaitTask
+  |> Async.RunSynchronously
+
 [<EntryPoint>]
-let main _argv = runAllTests ()
+let main argv =
+  match argv |> Array.toList with
+  | [ "--download" ] -> runDownloadTests ()
+  | [ "--all" ] ->
+    let unitResult = runAllTests ()
+
+    if unitResult <> 0 then
+      unitResult
+    else
+      runDownloadTests ()
+  | _ -> runAllTests ()

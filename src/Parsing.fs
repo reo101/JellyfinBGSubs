@@ -27,7 +27,8 @@ module Parsing =
       None
     else
       try
-        dateStr.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        let trimmed = dateStr.Trim()
+        trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)
         |> fun parts ->
           if parts.Length < 3 then
             None
@@ -52,6 +53,7 @@ module Parsing =
               if idx > 0 then return (day, idx, year) else return! None
             }
             |> Option.map (fun (day, month, year) ->
-              DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc).AddHours(2.0))
+              let baseDate = DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc)
+              baseDate.AddHours(2.0))
       with _ ->
         None
