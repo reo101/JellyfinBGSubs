@@ -1,5 +1,10 @@
 namespace Jellyfin.Plugin.BulgarianSubs
 
+// How to download the subtitle file
+type DownloadStrategy =
+  | DirectUrl of url: string * referer: string
+  | FormPage of pageUrl: string * referer: string
+
 // Internal representation of a search result before converting to Jellyfin's format
 type InternalSubtitleInfo =
   { Id: string
@@ -7,5 +12,5 @@ type InternalSubtitleInfo =
     ProviderName: string
     Format: string option
     Author: string option
-    DownloadUrl: string
+    DownloadStrategy: DownloadStrategy
     UploadDate: System.DateTime option }

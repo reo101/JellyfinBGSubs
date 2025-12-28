@@ -5,6 +5,7 @@ open System.Net.Http
 open System.Threading
 open Microsoft.Extensions.Logging
 open MediaBrowser.Controller.Subtitles
+open Jellyfin.Plugin.BulgarianSubs.Providers
 
 // ============================================================================
 // Simple test doubles
@@ -98,6 +99,14 @@ let ``test parseSabBz extracts subtitle info`` () =
   assertEqual results.[0].Id "12345" "ID should match"
   assertEqual results.[0].ProviderName "Subs.Sab.Bz" "Provider should be Sab.Bz"
   assertEqual results.[0].Title "Test Movie (2020)" "Title should match"
+  
+  // Check DownloadStrategy
+  match results.[0].DownloadStrategy with
+  | DirectUrl (url, referer) ->
+    assert' (url.Contains("http://subs.sab.bz/")) "URL should be from Sab.Bz"
+    assertEqual referer "http://subs.sab.bz/" "Referer should be set"
+  | FormPage _ -> failwith "Sab.Bz should use DirectUrl"
+  
   printfn "✓ parseSabBz extracts subtitle info"
 
 let ``test parseSabBz handles missing links`` () =
@@ -134,6 +143,14 @@ let ``test parseSubsunacs extracts info`` () =
   assertEqual results.[0].Id "67890" "ID should match"
   assertEqual results.[0].ProviderName "Subsunacs" "Provider should be Subsunacs"
   assertEqual results.[0].Title "Test Movie" "Title should match"
+  
+  // Check DownloadStrategy
+  match results.[0].DownloadStrategy with
+  | DirectUrl (url, referer) ->
+    assert' (url.Contains("subsunacs.net")) "URL should be from Subsunacs"
+    assertEqual referer "https://subsunacs.net/" "Referer should be set"
+  | FormPage _ -> failwith "Subsunacs should use DirectUrl"
+  
   printfn "✓ parseSubsunacs extracts info"
 
 let ``test parseSubsunacs returns empty on no matches`` () =
@@ -162,7 +179,10 @@ let ``test parseSabBz normalizes URLs`` () =
   let results = Parsing.parseSabBz html |> Seq.toList
 
   assertNotEmpty results "Should find results"
-  assert' (results.[0].DownloadUrl.StartsWith("http://subs.sab.bz/")) "URL should be normalized"
+  match results.[0].DownloadStrategy with
+  | DirectUrl (url, _) ->
+    assert' (url.StartsWith("http://subs.sab.bz/")) "URL should be normalized"
+  | FormPage _ -> failwith "Should be DirectUrl"
   printfn "✓ parseSabBz normalizes URLs"
 
 // ============================================================================
@@ -176,7 +196,7 @@ let ``test provider name`` () =
   let provider = BulgarianSubtitleProvider(logger, factory)
 
   let providerInterface = provider :> ISubtitleProvider
-  assertEqual providerInterface.Name "Bulgarian Subtitles (Sab.bz & Unacs)" "Provider name should match"
+  assertEqual providerInterface.Name "Bulgarian Subtitles (Sab.bz, Subsunacs & Yavka)" "Provider name should match"
   printfn "✓ Provider name is correct"
 
 let ``test supported media types`` () =
@@ -210,7 +230,7 @@ let ``test plain text SRT stream returns None`` () =
   use ms = new MemoryStream(srtBytes)
 
   // Use the actual library function to detect archives
-  let archiveFormat = ArchiveDetection.detectArchiveFormat ms
+  let archiveFormat = Common.detectArchiveFormat ms
 
   match archiveFormat with
   | None ->
@@ -224,10 +244,10 @@ let ``test ZIP magic detection returns ZIP`` () =
   let zipMagic = [| 0x50uy; 0x4Buy; 0x03uy; 0x04uy |]
   use ms = new MemoryStream(zipMagic)
 
-  let archiveFormat = ArchiveDetection.detectArchiveFormat ms
+  let archiveFormat = Common.detectArchiveFormat ms
   
   match archiveFormat with
-  | Some ArchiveDetection.ZIP ->
+  | Some Common.ArchiveFormat.ZIP ->
     printfn "✓ ZIP magic bytes correctly detected as ZIP format"
   | _ ->
     failwith "ZIP magic bytes should be detected as ZIP"
@@ -236,10 +256,10 @@ let ``test RAR magic detection returns RAR`` () =
   let rarMagic = [| 0x52uy; 0x61uy; 0x72uy; 0x21uy |]
   use ms = new MemoryStream(rarMagic)
 
-  let archiveFormat = ArchiveDetection.detectArchiveFormat ms
+  let archiveFormat = Common.detectArchiveFormat ms
   
   match archiveFormat with
-  | Some ArchiveDetection.RAR ->
+  | Some Common.ArchiveFormat.RAR ->
     printfn "✓ RAR magic bytes correctly detected as RAR format"
   | _ ->
     failwith "RAR magic bytes should be detected as RAR"
@@ -249,7 +269,7 @@ let ``test isSubtitleFile recognizes SRT files`` () =
 
   let allAreSubtitles =
     srtFiles
-    |> List.forall ArchiveDetection.isSubtitleFile
+    |> List.forall Common.isSubtitleFile
 
   assert' allAreSubtitles "All .srt and .sub files should be recognized"
   printfn "✓ isSubtitleFile correctly identifies subtitle extensions"
@@ -259,7 +279,7 @@ let ``test isSubtitleFile rejects non-subtitle files`` () =
 
   let noneAreSubtitles =
     nonSubtitleFiles
-    |> List.forall (fun f -> not (ArchiveDetection.isSubtitleFile f))
+    |> List.forall (fun f -> not (Common.isSubtitleFile f))
 
   assert' noneAreSubtitles "Non-subtitle files should not be recognized"
   printfn "✓ isSubtitleFile correctly rejects non-subtitle files"
@@ -276,7 +296,7 @@ let ``test finding first subtitle file in list`` () =
 
   let subtitleFile =
     archiveFiles
-    |> Seq.tryFind ArchiveDetection.isSubtitleFile
+    |> Seq.tryFind Common.isSubtitleFile
 
   match subtitleFile with
   | Some file ->
@@ -617,6 +637,9 @@ let runAllTests () =
     ``test Search with mocked Sab.Bz response`` ()
     ``test Search with mocked Subsunacs response`` ()
     ``test Search with both providers returning results`` ()
+
+    // Metadata extractor tests
+    MetadataExtractorTests.runTests ()
 
     printfn "\n✅ All tests passed!"
     0

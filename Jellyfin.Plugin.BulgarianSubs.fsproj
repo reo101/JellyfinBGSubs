@@ -25,6 +25,12 @@
     <Compile Include="./src/Configuration.fs" />
     <Compile Include="./src/Models.fs" />
     <Compile Include="./src/Parsing.fs" />
+    <Compile Include="./src/MetadataExtractor.fs" />
+    <Compile Include="./src/Providers/IProvider.fs" />
+    <Compile Include="./src/Providers/Common.fs" />
+    <Compile Include="./src/Providers/SabBz.fs" />
+    <Compile Include="./src/Providers/Subsunacs.fs" />
+    <Compile Include="./src/Providers/YavkaNet.fs" />
     <Compile Include="./src/Providers.fs" />
     <Compile Include="./src/Plugin.fs" />
   </ItemGroup>

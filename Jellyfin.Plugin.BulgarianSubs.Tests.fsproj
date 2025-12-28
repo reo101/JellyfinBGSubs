@@ -25,6 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="./src/MetadataExtractorTests.fs" />
     <Compile Include="./src/Tests.fs" />
   </ItemGroup>
 

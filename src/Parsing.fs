@@ -105,7 +105,7 @@ module Parsing =
                   ProviderName = "Subs.Sab.Bz"
                   Format = None
                   Author = None
-                  DownloadUrl = sabBzDownloadUrl href
+                  DownloadStrategy = DirectUrl (sabBzDownloadUrl href, "http://subs.sab.bz/")
                   UploadDate = uploadDate })
 
   // --- Subsunacs.net Parsing Logic ---
@@ -136,11 +136,13 @@ module Parsing =
               Regex.Match(tooltipStr, "Дата: &lt;/b&gt;([^&<]+)")
               |> fun m -> if m.Success then tryParseBulgarianDate (clean m.Groups.[1].Value) else None
 
+            let downloadUrl = "https://subsunacs.net/getentry.php?id=" + idValue + "&ei=0"
+
             Some
               { Id = idValue
                 Title = titleNode.InnerText.Trim() |> clean
                 ProviderName = "Subsunacs"
                 Format = None
                 Author = None
-                DownloadUrl = "https://subsunacs.net" + href
+                DownloadStrategy = DirectUrl (downloadUrl, "https://subsunacs.net/")
                 UploadDate = uploadDate })
