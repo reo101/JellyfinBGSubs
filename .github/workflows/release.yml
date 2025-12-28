@@ -21,21 +21,21 @@ jobs:
         run: |
           ZIP_PATH=$(nix build .#zip --no-link --print-out-paths)
           VERSION=${GITHUB_REF#refs/tags/v}
-          CHECKSUM=$(md5sum "$ZIP_PATH" | cut -d ' ' -f 1)
+          CHECKSUM=$(md5sum "$ZIP_PATH" | cut -d ' ' -f 1 | tr a-z A-Z)
           cp "$ZIP_PATH" "bulgariansubs-${VERSION}.zip"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
+          echo "ZIP_PATH=$ZIP_PATH" >> $GITHUB_OUTPUT
+      - name: Show zip metadata
+        run: |
+          echo "=== Zip Metadata ==="
+          unzip -v "${{ steps.build.outputs.ZIP_PATH }}"
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: bulgariansubs-${{ steps.build.outputs.version }}.zip
           generate_release_notes: true
-      - name: Update manifest
-        run: nix run .#update-manifest
-      - name: Commit and push manifest
+      - name: Verify manifest is up to date
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add manifest.json
-          git commit -m "chore: update manifest.json for v${{ steps.build.outputs.version }}" || exit 0
-          git push origin HEAD:main
+          nix run .#update-manifest
+          git diff --exit-code manifest.json || (echo "manifest.json is out of date" && exit 1)

@@ -151,12 +151,29 @@
           '';
         };
 
-        packages.zip = pkgs.runCommand "bulgariansubs-${pluginVersion}.zip" {
-          nativeBuildInputs = [pkgs.zip];
-        } ''
-          cd ${config.packages.default}
-          zip -r $out BulgarianSubs_*/
-        '';
+        packages.zip =
+          pkgs.runCommand "bulgariansubs-${pluginVersion}.zip" {
+            nativeBuildInputs = [
+              pkgs.zip
+              pkgs.coreutils
+              pkgs.findutils
+            ];
+          } ''
+            export LC_ALL=C TZ=UTC
+
+            mkdir -p /tmp/build
+            cp -r ${config.packages.default}/BulgarianSubs_*/ /tmp/build/
+            cd /tmp/build
+
+            # Normalize mtimes (earliest ZIP-safe timestamp)
+            find BulgarianSubs_1.0.0.0 -exec touch -t 198001010000.00 {} +
+
+            # Build deterministic zip with sorted files
+            zip -X -o -9 "$out" BulgarianSubs_1.0.0.0
+            find BulgarianSubs_1.0.0.0 -type f -print0 \
+              | sort -z \
+              | xargs -0 zip -X -o -9 "$out"
+          '';
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
@@ -193,7 +210,7 @@
         in {
           type = "app";
           program = lib.getExe (pkgs.writeShellScriptBin "update-manifest" ''
-            CHECKSUM=$(md5sum ${config.packages.zip} | cut -d ' ' -f 1)
+            CHECKSUM=$(md5sum ${config.packages.zip} | cut -d ' ' -f 1 | tr 'a-z' 'A-Z')
 
             ${lib.getExe pkgs.jq} -n \
               --arg guid "${pluginGuid}" \
