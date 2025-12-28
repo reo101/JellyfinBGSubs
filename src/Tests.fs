@@ -99,14 +99,14 @@ let ``test parseSabBz extracts subtitle info`` () =
   assertEqual results.[0].Id "12345" "ID should match"
   assertEqual results.[0].ProviderName "Subs.Sab.Bz" "Provider should be Sab.Bz"
   assertEqual results.[0].Title "Test Movie (2020)" "Title should match"
-  
+
   // Check DownloadStrategy
   match results.[0].DownloadStrategy with
-  | DirectUrl (url, referer) ->
+  | DirectUrl(url, referer) ->
     assert' (url.Contains("http://subs.sab.bz/")) "URL should be from Sab.Bz"
     assertEqual referer "http://subs.sab.bz/" "Referer should be set"
   | FormPage _ -> failwith "Sab.Bz should use DirectUrl"
-  
+
   printfn "✓ parseSabBz extracts subtitle info"
 
 let ``test parseSabBz handles missing links`` () =
@@ -143,14 +143,14 @@ let ``test parseSubsunacs extracts info`` () =
   assertEqual results.[0].Id "67890" "ID should match"
   assertEqual results.[0].ProviderName "Subsunacs" "Provider should be Subsunacs"
   assertEqual results.[0].Title "Test Movie" "Title should match"
-  
+
   // Check DownloadStrategy
   match results.[0].DownloadStrategy with
-  | DirectUrl (url, referer) ->
+  | DirectUrl(url, referer) ->
     assert' (url.Contains("subsunacs.net")) "URL should be from Subsunacs"
     assertEqual referer "https://subsunacs.net/" "Referer should be set"
   | FormPage _ -> failwith "Subsunacs should use DirectUrl"
-  
+
   printfn "✓ parseSubsunacs extracts info"
 
 let ``test parseSubsunacs returns empty on no matches`` () =
@@ -179,10 +179,11 @@ let ``test parseSabBz normalizes URLs`` () =
   let results = Parsing.parseSabBz html |> Seq.toList
 
   assertNotEmpty results "Should find results"
+
   match results.[0].DownloadStrategy with
-  | DirectUrl (url, _) ->
-    assert' (url.StartsWith("http://subs.sab.bz/")) "URL should be normalized"
+  | DirectUrl(url, _) -> assert' (url.StartsWith("http://subs.sab.bz/")) "URL should be normalized"
   | FormPage _ -> failwith "Should be DirectUrl"
+
   printfn "✓ parseSabBz normalizes URLs"
 
 // ============================================================================
@@ -236,8 +237,7 @@ let ``test plain text SRT stream returns None`` () =
   | None ->
     assertEqual ms.Position 0L "Stream position should be reset to 0"
     printfn "✓ Plain text SRT file correctly detected as non-archive"
-  | Some fmt ->
-    failwithf "Plain text should not be detected as archive, got %A" fmt
+  | Some fmt -> failwithf "Plain text should not be detected as archive, got %A" fmt
 
 let ``test ZIP magic detection returns ZIP`` () =
   // Create a fake ZIP (just the magic bytes)
@@ -245,31 +245,25 @@ let ``test ZIP magic detection returns ZIP`` () =
   use ms = new MemoryStream(zipMagic)
 
   let archiveFormat = Common.detectArchiveFormat ms
-  
+
   match archiveFormat with
-  | Some Common.ArchiveFormat.ZIP ->
-    printfn "✓ ZIP magic bytes correctly detected as ZIP format"
-  | _ ->
-    failwith "ZIP magic bytes should be detected as ZIP"
+  | Some Common.ArchiveFormat.ZIP -> printfn "✓ ZIP magic bytes correctly detected as ZIP format"
+  | _ -> failwith "ZIP magic bytes should be detected as ZIP"
 
 let ``test RAR magic detection returns RAR`` () =
   let rarMagic = [| 0x52uy; 0x61uy; 0x72uy; 0x21uy |]
   use ms = new MemoryStream(rarMagic)
 
   let archiveFormat = Common.detectArchiveFormat ms
-  
+
   match archiveFormat with
-  | Some Common.ArchiveFormat.RAR ->
-    printfn "✓ RAR magic bytes correctly detected as RAR format"
-  | _ ->
-    failwith "RAR magic bytes should be detected as RAR"
+  | Some Common.ArchiveFormat.RAR -> printfn "✓ RAR magic bytes correctly detected as RAR format"
+  | _ -> failwith "RAR magic bytes should be detected as RAR"
 
 let ``test isSubtitleFile recognizes SRT files`` () =
   let srtFiles = [ "subtitle.srt"; "SUBTITLE.SRT"; "movie.sub"; "MOVIE.SUB" ]
 
-  let allAreSubtitles =
-    srtFiles
-    |> List.forall Common.isSubtitleFile
+  let allAreSubtitles = srtFiles |> List.forall Common.isSubtitleFile
 
   assert' allAreSubtitles "All .srt and .sub files should be recognized"
   printfn "✓ isSubtitleFile correctly identifies subtitle extensions"
@@ -278,8 +272,7 @@ let ``test isSubtitleFile rejects non-subtitle files`` () =
   let nonSubtitleFiles = [ "readme.txt"; "image.jpg"; "archive.zip"; "script.exe" ]
 
   let noneAreSubtitles =
-    nonSubtitleFiles
-    |> List.forall (fun f -> not (Common.isSubtitleFile f))
+    nonSubtitleFiles |> List.forall (fun f -> not (Common.isSubtitleFile f))
 
   assert' noneAreSubtitles "Non-subtitle files should not be recognized"
   printfn "✓ isSubtitleFile correctly rejects non-subtitle files"
@@ -294,16 +287,13 @@ let ``test finding first subtitle file in list`` () =
       yield "another.sub"
     }
 
-  let subtitleFile =
-    archiveFiles
-    |> Seq.tryFind Common.isSubtitleFile
+  let subtitleFile = archiveFiles |> Seq.tryFind Common.isSubtitleFile
 
   match subtitleFile with
   | Some file ->
     assertEqual file "subtitle.srt" "Should find first subtitle file"
     printfn "✓ Correctly identifies first subtitle file in archive"
-  | None ->
-    failwith "Should have found subtitle file"
+  | None -> failwith "Should have found subtitle file"
 
 let ``test GetSubtitles ID parsing handles provider prefix`` () =
   // Provider IDs are formatted as "provider|url"

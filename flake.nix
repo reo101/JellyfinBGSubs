@@ -78,10 +78,11 @@
           installPhase = ''
             install -d -m 700 $out/BulgarianSubs_1.0.0.0
 
-            # Copy all DLLs from release build
-            for dll in bin/Release/net9.0/linux-x64/*.dll; do
-              install -m 600 "$dll" $out/BulgarianSubs_1.0.0.0/
-            done
+            # Copy only the plugin DLL and its actual dependencies (not Jellyfin's own DLLs)
+            install -m 600 bin/Release/net9.0/linux-x64/Jellyfin.Plugin.BulgarianSubs.dll $out/BulgarianSubs_1.0.0.0/
+            install -m 600 bin/Release/net9.0/linux-x64/FSharp.Core.dll $out/BulgarianSubs_1.0.0.0/
+            install -m 600 bin/Release/net9.0/linux-x64/HtmlAgilityPack.dll $out/BulgarianSubs_1.0.0.0/
+            install -m 600 bin/Release/net9.0/linux-x64/SharpCompress.dll $out/BulgarianSubs_1.0.0.0/
 
             install -m 600 ${./meta.json} $out/BulgarianSubs_1.0.0.0/meta.json
 

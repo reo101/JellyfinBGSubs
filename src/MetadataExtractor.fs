@@ -1,6 +1,8 @@
 namespace Jellyfin.Plugin.BulgarianSubs
 
 open System
+open System.IO
+open System.Text.RegularExpressions
 open MediaBrowser.Controller.Subtitles
 
 /// Extracted metadata from Jellyfin library for improved searching
@@ -12,10 +14,44 @@ type ExtractedMetadata =
     IsMovie: bool
     IsEpisode: bool
     SeriesName: string option
-    EpisodeInfo: (int * int) option }
+    EpisodeInfo: (int * int) option
+    FileBasedTitle: string option }
 
 /// Utilities for extracting and using metadata from SubtitleSearchRequest
 module MetadataExtractor =
+
+  /// Extract title from media file path
+  /// Parses common naming patterns like "Movie.Title.2020.1080p.BluRay.mkv" or "Movie Title (2020)/Movie Title (2020).mkv"
+  let private extractTitleFromPath (mediaPath: string) : string option =
+    if String.IsNullOrEmpty mediaPath then None
+    else
+      try
+        // Get the filename without extension
+        let fileName = Path.GetFileNameWithoutExtension(mediaPath)
+        if String.IsNullOrEmpty fileName then None
+        else
+          // Try to extract title using common patterns
+          
+          // Pattern 1: "Title.Year.Quality..." or "Title Year Quality..."
+          // Match: everything before a 4-digit year (19xx or 20xx)
+          let yearPattern = Regex(@"^(.+?)[.\s_-]*((?:19|20)\d{2})[.\s_-]*", RegexOptions.IgnoreCase)
+          let yearMatch = yearPattern.Match(fileName)
+          
+          if yearMatch.Success then
+            let title = yearMatch.Groups.[1].Value
+            // Replace dots, underscores with spaces and clean up
+            let cleanTitle = Regex.Replace(title, @"[._]", " ").Trim()
+            if not (String.IsNullOrWhiteSpace cleanTitle) then Some cleanTitle
+            else None
+          else
+            // Pattern 2: Just use the filename, replace dots/underscores
+            let cleanTitle = Regex.Replace(fileName, @"[._]", " ")
+            // Remove common quality/codec tags at the end
+            let withoutTags = Regex.Replace(cleanTitle, @"\s*(720p|1080p|2160p|4K|BluRay|BRRip|WEBRip|HDTV|DVDRip|x264|x265|HEVC|AAC|AC3|DTS).*$", "", RegexOptions.IgnoreCase)
+            let finalTitle = withoutTags.Trim()
+            if not (String.IsNullOrWhiteSpace finalTitle) then Some finalTitle
+            else None
+      with _ -> None
 
   /// Extract IMDB ID from ProviderIds dictionary
   let private extractImdbId (providerIds: System.Collections.Generic.Dictionary<string, string>) : string option =
@@ -70,6 +106,7 @@ module MetadataExtractor =
     let seriesName = if not (String.IsNullOrEmpty request.SeriesName) then Some request.SeriesName else None
     let episodeInfo = extractEpisodeInfo request
     let contentType = request.ContentType.ToString() |> (fun s -> if String.IsNullOrEmpty s then None else Some s)
+    let fileBasedTitle = extractTitleFromPath request.MediaPath
 
     { ImdbId = imdbId
       TmdbId = tmdbId
@@ -78,26 +115,32 @@ module MetadataExtractor =
       IsMovie = isMovie
       IsEpisode = isEpisode
       SeriesName = seriesName
-      EpisodeInfo = episodeInfo }
+      EpisodeInfo = episodeInfo
+      FileBasedTitle = fileBasedTitle }
 
   /// Build enhanced search terms using metadata
+  /// Prioritizes file-based title (usually English) over display name (may be localized)
   /// For movies with IMDb/TMDb ID, include year to narrow results
   /// For episodes, also include series info if available
   let buildEnhancedSearchTerms (metadata: ExtractedMetadata) (baseSearchTerm: string) : string list =
     [
-      // Primary search term
-      baseSearchTerm
+      // Priority 1: File-based title (usually the original English title)
+      match metadata.FileBasedTitle with
+      | Some fileTitle -> yield fileTitle
+      | None -> ()
 
-      // If we have a production year, add it for better matching
+      // Priority 2: File-based title with year
+      match (metadata.FileBasedTitle, metadata.Year) with
+      | (Some fileTitle, Some year) -> yield sprintf "%s %d" fileTitle year
+      | _ -> ()
+
+      // Priority 3: Display name (may be localized but fallback)
+      yield baseSearchTerm
+
+      // Priority 4: Display name with year
       match metadata.Year with
-      | Some year -> sprintf "%s %d" baseSearchTerm year
-      | None -> baseSearchTerm
-
-      // For episodes, no additional terms needed (already have series name)
-      // The base search term should be the series name
-
-      // Fallback to just the base term
-      baseSearchTerm
+      | Some year -> yield sprintf "%s %d" baseSearchTerm year
+      | None -> ()
     ]
     |> List.distinct
 
@@ -125,6 +168,7 @@ module MetadataExtractor =
     let parts = match metadata.TmdbId with Some id -> parts @ [$"TMDb:{id}"] | None -> parts
     let parts = match metadata.Year with Some year -> parts @ [$"{year}"] | None -> parts
     let parts = match metadata.EpisodeInfo with Some (s, e) -> parts @ [$"S{s:D2}E{e:D2}"] | None -> parts
+    let parts = match metadata.FileBasedTitle with Some title -> parts @ [$"File:\"{title}\""] | None -> parts
     
     match parts with
     | [] -> "No metadata"

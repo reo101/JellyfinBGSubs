@@ -171,7 +171,9 @@ let testSearchSubsunacs (movieName: string) (year: int option) =
                | Some d -> d.ToString("yyyy-MM-dd")
                | None -> "N/A")
 
-            printfn "     URL: %s" item.DownloadUrl
+            match item.DownloadStrategy with
+            | DirectUrl(url, _) -> printfn "     URL: %s" url
+            | FormPage(url, _) -> printfn "     Form Page: %s" url
       }
 
     task |> Async.RunSynchronously
@@ -305,6 +307,7 @@ let testDownload (subtitleId: string) =
 
       // Check if it looks like a valid subtitle file
       let previewText = preview.Trim()
+
       if previewText.StartsWith("1") || previewText.StartsWith("[") then
         printfn "   ✓ Looks like a valid subtitle file"
       else
@@ -483,11 +486,10 @@ let interactiveTest () =
             printfn "Example: episode Breaking Bad 1 1"
           else
             let seriesName = String.concat " " parts.[1 .. parts.Length - 3]
+
             match (Int32.TryParse(parts.[parts.Length - 2]), Int32.TryParse(parts.[parts.Length - 1])) with
-            | (true, season), (true, episode) ->
-              testEpisodeSearch seriesName season episode |> ignore
-            | _ ->
-              printfn "Error: season and episode must be numbers"
+            | (true, season), (true, episode) -> testEpisodeSearch seriesName season episode |> ignore
+            | _ -> printfn "Error: season and episode must be numbers"
 
           loop ()
         | "download" ->
@@ -524,6 +526,7 @@ let interactiveTest () =
             let request = SubtitleSearchRequest()
             request.Language <- "bg"
             request.Name <- movieName
+
             if year.IsSome then
               request.ProductionYear <- Nullable(year.Value)
 
@@ -561,27 +564,45 @@ let main argv =
     runDefault ()
   else
     match argv.[0] with
-    | "interactive" -> interactiveTest (); 0
+    | "interactive" ->
+      interactiveTest ()
+      0
     | "inspect" ->
       let isProvider = argv.Length > 1 && (argv.[1] = "subsunacs" || argv.[1] = "sabs")
       let provider = if isProvider then argv.[1] else "sabs"
       let movieStart = if isProvider then 2 else 1
-      let movieName = if argv.Length > movieStart then String.concat " " argv.[movieStart..] else "Inception"
-      inspectHtmlStructure movieName provider; 0
+
+      let movieName =
+        if argv.Length > movieStart then
+          String.concat " " argv.[movieStart..]
+        else
+          "Inception"
+
+      inspectHtmlStructure movieName provider
+      0
     | "test-download" ->
       let results = testSearch "Inception" (Some 2010)
+
       if not (List.isEmpty results) then
         testDownload results.[0].Id
       else
         printfn "No results found to download"
+
       0
-    | "test-extraction" -> testExtractAndDecompressFlow (); 0
+    | "test-extraction" ->
+      testExtractAndDecompressFlow ()
+      0
     | "test-subsunacs" ->
       testSearchSubsunacs "Inception" (Some 2010) |> ignore
       testSearchSubsunacs "The Matrix" (Some 1999) |> ignore
       0
     | "test-show" ->
-      let seriesName = if argv.Length > 1 then String.concat " " argv.[1..] else "Breaking Bad"
+      let seriesName =
+        if argv.Length > 1 then
+          String.concat " " argv.[1..]
+        else
+          "Breaking Bad"
+
       testShowSearch seriesName |> ignore
       0
     | "test-episode" ->

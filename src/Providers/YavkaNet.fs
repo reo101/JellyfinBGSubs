@@ -31,12 +31,13 @@ module YavkaNetImpl =
         |> Seq.choose (fun row ->
           // Each result row has specific structure
           let linkNode = row.SelectSingleNode(".//a[@class='balon' or @class='selector']")
-          
+
           if linkNode = null then
             None
           else
             try
               let href = linkNode.GetAttributeValue("href", "")
+
               if String.IsNullOrWhiteSpace href then
                 None
               else
@@ -45,6 +46,7 @@ module YavkaNetImpl =
 
                 // Extract additional info from row cells
                 let cells = row.SelectNodes(".//td")
+
                 let fps =
                   cells
                   |> Seq.tryFind (fun td ->
@@ -55,26 +57,28 @@ module YavkaNetImpl =
 
                 let uploader =
                   cells
-                  |> Seq.tryFind (fun td ->
-                    td.SelectSingleNode(".//a[@class='click']") <> null)
+                  |> Seq.tryFind (fun td -> td.SelectSingleNode(".//a[@class='click']") <> null)
                   |> Option.bind (fun td ->
                     let a = td.SelectSingleNode(".//a[@class='click']")
-                    if a <> null then Some (a.InnerText.Trim()) else None)
+                    if a <> null then Some(a.InnerText.Trim()) else None)
                   |> Option.defaultValue ""
 
                 let downloads =
                   cells
-                  |> Seq.tryFind (fun td ->
-                    td.SelectSingleNode(".//div/strong") <> null)
+                  |> Seq.tryFind (fun td -> td.SelectSingleNode(".//div/strong") <> null)
                   |> Option.bind (fun td ->
                     let strong = td.SelectSingleNode(".//div/strong")
-                    if strong <> null then Some (strong.InnerText.Trim()) else None)
+
+                    if strong <> null then
+                      Some(strong.InnerText.Trim())
+                    else
+                      None)
                   |> Option.defaultValue "0"
 
                 Some
                   { PageUrl = pageUrl
                     Title = title
-                    Year = ""  // Could parse from cells if needed
+                    Year = "" // Could parse from cells if needed
                     Fps = fps
                     Uploader = uploader
                     Downloads = downloads }
@@ -83,6 +87,11 @@ module YavkaNetImpl =
         |> Seq.toList
     with _ ->
       []
+
+  let private tryParseInt (s: string) =
+    match Int32.TryParse(s.Trim()) with
+    | true, v -> Some v
+    | _ -> None
 
   /// Convert search results to internal subtitle info format
   /// Stores page URL in FormPage strategy for later extraction of form params
@@ -93,20 +102,24 @@ module YavkaNetImpl =
         Title = r.Title
         ProviderName = "Yavka.net"
         Format = None
-        Author = if String.IsNullOrWhiteSpace r.Uploader then None else Some r.Uploader
-        DownloadStrategy = FormPage (r.PageUrl, "https://yavka.net/")
-        UploadDate = None })  // Could parse from page if added later
+        Author =
+          if String.IsNullOrWhiteSpace r.Uploader then
+            None
+          else
+            Some r.Uploader
+        DownloadCount = tryParseInt r.Downloads
+        DownloadStrategy = FormPage(r.PageUrl, "https://yavka.net/")
+        UploadDate = None })
 
 /// Yavka.net subtitle provider implementation
 /// Handles 3-step flow: POST search → GET page → extract form → POST download
-type YavkaNet () =
+type YavkaNet() =
   interface IProvider with
     member _.Name = "Yavka.net"
-    
-    member _.SearchUrl (_query: string) (_year: int option) : string =
-      "https://yavka.net/search"
-    
-    member _.ParseResults (html: string) : InternalSubtitleInfo seq =
+
+    member _.SearchUrl (_query: string) (_year: int option) : string = "https://yavka.net/search"
+
+    member _.ParseResults(html: string) : InternalSubtitleInfo seq =
       YavkaNetImpl.parseSearchResults html
       |> YavkaNetImpl.resultsToSubtitleInfo
       |> Seq.ofList

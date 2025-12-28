@@ -7,32 +7,56 @@ open System.Text
 open System.Threading
 open MediaBrowser.Controller.Subtitles
 open MediaBrowser.Controller.Providers
+open MediaBrowser.Controller.Library
+open MediaBrowser.Controller.Entities.Movies
+open MediaBrowser.Controller.Entities.TV
 open MediaBrowser.Model.Providers
 open Microsoft.Extensions.Logging
 open Jellyfin.Plugin.BulgarianSubs.Providers
 open ComputationExpressions
 
 /// The main Jellyfin subtitle provider for Bulgarian subtitles
-type BulgarianSubtitleProvider(logger: ILogger<BulgarianSubtitleProvider>, httpClientFactory: IHttpClientFactory) =
+type BulgarianSubtitleProvider(logger: ILogger<BulgarianSubtitleProvider>, httpClientFactory: IHttpClientFactory, libraryManager: ILibraryManager) =
 
   // Register code page encodings on first instantiation
   static do Encoding.RegisterProvider CodePagesEncodingProvider.Instance
 
+  do logger.LogInformation("BulgarianSubtitleProvider instance created.")
+
   let httpClient = httpClientFactory.CreateClient "BulgarianSubs"
 
-  // Initialize debug logger
-  let debugLogger = DebugLogger.fileLogger "/tmp/bulgariansubs.log"
-
   // List of all available providers
-  let providers: IProvider list =
-    [ SabBz ()
-      Subsunacs ()
-      YavkaNet () ]
+  let providers: IProvider list = [ SabBz(); Subsunacs(); YavkaNet() ]
+
+  // Helper to get the original title from library item
+  let getOriginalTitle (mediaPath: string) =
+    try
+      if String.IsNullOrEmpty(mediaPath) then
+        None
+      else
+        let item = libraryManager.FindByPath(mediaPath, Nullable())
+        match item with
+        | :? Movie as movie ->
+          if not (String.IsNullOrEmpty(movie.OriginalTitle)) then
+            Some movie.OriginalTitle
+          else
+            None
+        | :? Episode as episode ->
+          if not (String.IsNullOrEmpty(episode.Series.OriginalTitle)) then
+            Some episode.Series.OriginalTitle
+          else
+            None
+        | _ -> None
+    with ex ->
+      logger.LogDebug($"Could not get original title: {ex.Message}")
+      None
 
   // Helper to check if language is supported (Bulgarian)
   let isSupportedLanguage (lang: string) =
     match if isNull lang then "" else lang.ToLowerInvariant() with
-    | "bg" | "bul" | "bulgarian" -> true
+    | "bg"
+    | "bul"
+    | "bulgarian" -> true
     | _ -> false
 
   // Helper to check if a subtitle title matches the requested season and episode
@@ -44,9 +68,8 @@ type BulgarianSubtitleProvider(logger: ILogger<BulgarianSubtitleProvider>, httpC
         sprintf "%dx%d" season episode
         // Format: SxxEyy (e.g., "S03E02")
         sprintf "s%02de%02d" season episode
-        sprintf "s%de%d" season episode
-      ]
-    
+        sprintf "s%de%d" season episode ]
+
     let titleLower = title.ToLowerInvariant()
     patterns |> List.exists (fun pattern -> titleLower.Contains pattern)
 
@@ -71,102 +94,133 @@ type BulgarianSubtitleProvider(logger: ILogger<BulgarianSubtitleProvider>, httpC
 
     member _.Search(request: SubtitleSearchRequest, cancellationToken: CancellationToken) =
       task {
+        logger.LogInformation($"Search called for {request.Name}, language={request.Language}")
+
         // Extract metadata from Jellyfin library
         let metadata = MetadataExtractor.extract request
 
-        // Build search name - use series name for TV shows, just name for movies
+        // Get original title from library (prioritized for non-English content)
+        let originalTitle = getOriginalTitle request.MediaPath
+
+        // Build search name - prioritize original title, then series name for TV, then name
         let searchName =
-          if request.ParentIndexNumber.HasValue || request.IndexNumber.HasValue then
-            // TV show: search by series name only (will filter episodes client-side)
-            if String.IsNullOrEmpty(request.SeriesName) then request.Name else request.SeriesName
-          else
-            // Movie: just use the name
-            request.Name
+          match originalTitle with
+          | Some orig -> orig
+          | None ->
+            if request.ParentIndexNumber.HasValue || request.IndexNumber.HasValue then
+              if String.IsNullOrEmpty(request.SeriesName) then
+                request.Name
+              else
+                request.SeriesName
+            else
+              request.Name
+
+        let origTitleStr = originalTitle |> Option.defaultValue "(none)"
+        logger.LogDebug($"Original title: {origTitleStr}, using searchName: {searchName}")
 
         // Extract episode info for client-side filtering
-        let season = if request.ParentIndexNumber.HasValue then Some request.ParentIndexNumber.Value else None
-        let episode = if request.IndexNumber.HasValue then Some request.IndexNumber.Value else None
+        let season =
+          if request.ParentIndexNumber.HasValue then
+            Some request.ParentIndexNumber.Value
+          else
+            None
+
+        let episode =
+          if request.IndexNumber.HasValue then
+            Some request.IndexNumber.Value
+          else
+            None
 
         let metadataDesc = MetadataExtractor.describeMetadata metadata
-        debugLogger.Debug $"Search called with language: {request.Language}, name: {searchName}, season: {season}, episode: {episode}, contentType: {request.ContentType}, metadata: {metadataDesc}"
+        logger.LogDebug($"Search: language={request.Language}, name={searchName}, season={season}, episode={episode}, metadata={metadataDesc}")
 
         if not (isSupportedLanguage request.Language) then
+          logger.LogDebug($"Language {request.Language} not supported, returning empty")
           return Seq.empty
         else
+          logger.LogDebug($"Language supported, starting search for {searchName}")
+          let fileTitleStr = metadata.FileBasedTitle |> Option.defaultValue "(none)"
+          logger.LogDebug($"File-based title: {fileTitleStr}")
           let results = System.Collections.Generic.List<RemoteSubtitleInfo>()
           let searchTerm = System.Net.WebUtility.UrlEncode searchName
-          let year = if request.ProductionYear.HasValue then Some request.ProductionYear.Value else None
+
+          let year =
+            if request.ProductionYear.HasValue then
+              Some request.ProductionYear.Value
+            else
+              None
 
           // Determine search variations based on available metadata
+          // Always use buildEnhancedSearchTerms to prioritize file-based title
           let searchVariations =
-            if MetadataExtractor.hasReliableMetadata metadata then
-              // Build multiple search attempts with metadata
-              let baseTerms = MetadataExtractor.buildEnhancedSearchTerms metadata searchName
-              baseTerms 
-              |> List.map System.Net.WebUtility.UrlEncode
-              |> List.take 2  // Limit to first 2 variations to avoid redundant requests
-            else
-              // Fallback to single search term
-              [searchTerm]
-
-          // Search using all available providers with potentially multiple search variations
+            let baseTerms = MetadataExtractor.buildEnhancedSearchTerms metadata searchName
+            let encoded = baseTerms |> List.map System.Net.WebUtility.UrlEncode
+            // Take up to 3 variations (file title, file+year, display name)
+            encoded |> List.truncate 3
+          
+          let variationsStr = searchVariations |> String.concat ", "
+          logger.LogDebug($"Search variations: {variationsStr}")
+          logger.LogDebug($"About to search {providers.Length} providers with {searchVariations.Length} variations")
           for provider in providers do
             try
-              // Try each search variation (usually just one)
+              logger.LogDebug($"Searching provider {provider.Name}")
               for encodedSearchTerm in searchVariations do
                 let url = provider.SearchUrl encodedSearchTerm year
-                debugLogger.Debug $"[{provider.Name}] Searching with query: {encodedSearchTerm}, year: {year}"
-                
+                logger.LogDebug($"[{provider.Name}] URL: {url}")
+
                 try
+                  logger.LogDebug($"[{provider.Name}] Making HTTP request...")
                   let! response =
-                    match provider.Name with
-                    | "Yavka.net" ->
-                      // Yavka uses POST
-                      debugLogger.Debug $"[{provider.Name}] POST request to {url}"
-                      let content = new FormUrlEncodedContent([
-                        new KeyValuePair<string, string>("s", encodedSearchTerm)
-                        new KeyValuePair<string, string>("l", "BG")
-                      ])
-                      httpClient.PostAsync(url, content, cancellationToken)
-                    | _ ->
-                      // Others use GET
-                      debugLogger.Debug $"[{provider.Name}] GET request to {url}"
-                      httpClient.GetAsync(url, cancellationToken)
+                    try
+                      match provider.Name with
+                      | "Yavka.net" ->
+                        let content =
+                          new FormUrlEncodedContent(
+                            [ new KeyValuePair<string, string>("s", encodedSearchTerm)
+                              new KeyValuePair<string, string>("l", "BG") ]
+                          )
+                        httpClient.PostAsync(url, content, cancellationToken)
+                      | _ ->
+                        httpClient.GetAsync(url, cancellationToken)
+                    with httpEx ->
+                      logger.LogDebug($"[{provider.Name}] HTTP Exception: {httpEx.Message}")
+                      reraise()
 
                   let! bytes = readResponseAsBytes response cancellationToken
-                  debugLogger.Debug $"[{provider.Name}] Response: {response.StatusCode}, {bytes.Length} bytes"
+                  logger.LogDebug($"[{provider.Name}] Response: {response.StatusCode}, {bytes.Length} bytes")
                   let encoding = System.Text.Encoding.GetEncoding("windows-1251")
                   let html = encoding.GetString(bytes)
 
                   let parsedItems = provider.ParseResults html |> Seq.toList
-                  debugLogger.Debug $"[{provider.Name}] Parsed {parsedItems.Length} raw results"
+                  logger.LogDebug($"[{provider.Name}] Parsed {parsedItems.Length} raw results")
 
                   parsedItems
                   |> Seq.filter (fun item ->
-                    // Filter by episode if episode search
                     match (season, episode) with
                     | (Some s, Some e) -> matchesEpisode s e item.Title
                     | _ -> true)
                   |> Seq.iter (fun item ->
                     let info = RemoteSubtitleInfo()
-                    // Encode both provider and download URL/page in ID
                     match item.DownloadStrategy with
-                    | DirectUrl (url, _) -> info.Id <- $"{provider.Name}|{url}"
-                    | FormPage (pageUrl, _) -> info.Id <- $"{provider.Name}|{pageUrl}"
+                    | DirectUrl(url, _) -> info.Id <- $"{provider.Name}|{url}"
+                    | FormPage(pageUrl, _) -> info.Id <- $"{provider.Name}|{pageUrl}"
+
                     info.Name <- item.Title
-                    info.ProviderName <- item.ProviderName
+                    info.ProviderName <- "Bulgarian Subtitles"
                     info.ThreeLetterISOLanguageName <- "bul"
+                    info.Format <- item.Format |> Option.defaultValue ""
+                    info.Author <- item.Author |> Option.defaultValue ""
+                    info.DownloadCount <- item.DownloadCount |> Option.defaultValue 0
+                    info.DateCreated <- item.UploadDate |> Option.toNullable
+                    info.Comment <- $"[{item.ProviderName}]"
                     results.Add(info))
-                  
-                  let filteredCount = results.Count
-                  debugLogger.Debug $"[{provider.Name}] Added {results.Count - (parsedItems.Length)} filtered results to total"
+
                 with ex ->
                   logger.LogError(ex, $"Error searching {provider.Name}")
-                  debugLogger.Debug $"[{provider.Name}] Exception: {ex.Message}"
             with ex ->
               logger.LogError(ex, $"Error searching {provider.Name}")
-              debugLogger.Debug $"[{provider.Name}] Exception: {ex.Message}"
 
+          logger.LogInformation($"Search complete, found {results.Count} subtitles")
           return results :> seq<RemoteSubtitleInfo>
       }
 
@@ -190,11 +244,12 @@ type BulgarianSubtitleProvider(logger: ILogger<BulgarianSubtitleProvider>, httpC
           // Determine strategy - FormPage for Yavka, DirectUrl for others
           let strategy =
             if providerName = "Yavka.net" then
-              FormPage (url, referer)
+              FormPage(url, referer)
             else
-              DirectUrl (url, referer)
+              DirectUrl(url, referer)
 
-          let! (subStream, ext) = Common.executeStrategy strategy httpClient cancellationToken Common.extractSubtitleStream
+          let! (subStream, ext) =
+            Common.executeStrategy strategy httpClient cancellationToken Common.extractSubtitleStream
 
           let result = SubtitleResponse()
           result.Format <- ext

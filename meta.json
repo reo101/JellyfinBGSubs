@@ -12,5 +12,10 @@
   "status": "Active",
   "autoUpdate": false,
   "imagePath": "/var/lib/jellyfin/plugins/BulgarianSubs_1.0.0.0/jellyfin-plugin-bulgariansubs.png",
-  "assemblies": []
+  "assemblies": [
+    "Jellyfin.Plugin.BulgarianSubs.dll",
+    "FSharp.Core.dll",
+    "HtmlAgilityPack.dll",
+    "SharpCompress.dll"
+  ]
 }

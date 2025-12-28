@@ -7,11 +7,20 @@ open Jellyfin.Plugin.BulgarianSubs
 
 module SubsunuacsImpl =
 
-  // Helper to clean strings
   let private clean (s: string) =
     if String.IsNullOrWhiteSpace s then "" else s.Trim()
 
+  let private tryParseInt (s: string) =
+    match Int32.TryParse(clean s) with
+    | true, v -> Some v
+    | _ -> None
+
+  let private extractFormat (tooltip: string) =
+    let m = Regex.Match(tooltip, @"Формат:\s*&lt;/b&gt;(\w+)", RegexOptions.IgnoreCase)
+    if m.Success then Some(m.Groups.[1].Value.ToLowerInvariant()) else None
+
   /// Parse search results from Subsunacs HTML response
+  /// Row: td[0]=title(tdMovie), td[1]=CDs, td[2]=FPS, td[3]=rating, td[4]=comments, td[5]=uploader, td[6]=downloads
   let parseSearchResults (html: string) : InternalSubtitleInfo seq =
     try
       let doc = HtmlDocument()
@@ -22,27 +31,33 @@ module SubsunuacsImpl =
       | rows ->
         rows
         |> Seq.choose (fun row ->
+          let cells = row.SelectNodes(".//td")
           let titleNode = row.SelectSingleNode(".//td[@class='tdMovie']//a[1]")
-          let linkNode = row.SelectSingleNode(".//a[contains(@href, '/subtitles/')]")
 
-          if titleNode = null || linkNode = null then
+          if titleNode = null || cells = null || cells.Count < 7 then
             None
           else
-            let href = linkNode.GetAttributeValue("href", "")
-            let idMatch = Regex.Match(href, "-(\d+)/?")
+            let href = titleNode.GetAttributeValue("href", "")
+            let idMatch = Regex.Match(href, @"-(\d+)/?")
 
             if not idMatch.Success then
               None
             else
               let idValue = idMatch.Groups.[1].Value
-              let tooltipStr = linkNode.GetAttributeValue("title", "")
+              let tooltipStr = titleNode.GetAttributeValue("title", "")
+
               let uploadDate =
-                Regex.Match(tooltipStr, "Дата: &lt;/b&gt;([^&<]+)")
+                Regex.Match(tooltipStr, @"Дата:\s*&lt;/b&gt;([^&<]+)")
                 |> fun m ->
                   if m.Success then
                     Parsing.tryParseBulgarianDate (clean m.Groups.[1].Value)
                   else
                     None
+
+              let format = extractFormat tooltipStr
+              let uploaderNode = cells.[5].SelectSingleNode(".//a")
+              let author = if uploaderNode <> null then Some(clean uploaderNode.InnerText) else None
+              let downloads = tryParseInt cells.[6].InnerText
 
               let downloadUrl = "https://subsunacs.net/getentry.php?id=" + idValue + "&ei=0"
 
@@ -50,22 +65,21 @@ module SubsunuacsImpl =
                 { Id = idValue
                   Title = titleNode.InnerText.Trim() |> clean
                   ProviderName = "Subsunacs"
-                  Format = None
-                  Author = None
-                  DownloadStrategy = DirectUrl (downloadUrl, "https://subsunacs.net/")
-                  UploadDate = uploadDate }
-        )
+                  Format = format
+                  Author = author
+                  DownloadCount = downloads
+                  DownloadStrategy = DirectUrl(downloadUrl, "https://subsunacs.net/")
+                  UploadDate = uploadDate })
     with _ ->
       Seq.empty
 
 /// Subsunacs.net subtitle provider
-type Subsunacs () =
+type Subsunacs() =
   interface IProvider with
     member _.Name = "Subsunacs"
-    
+
     member _.SearchUrl (query: string) (year: int option) : string =
       let yearParam = year |> Option.map (fun y -> $"&y={y}") |> Option.defaultValue ""
       $"https://subsunacs.net/search.php?m={query}{yearParam}&t=Submit"
-    
-    member _.ParseResults (html: string) : InternalSubtitleInfo seq =
-      SubsunuacsImpl.parseSearchResults html
+
+    member _.ParseResults(html: string) : InternalSubtitleInfo seq = SubsunuacsImpl.parseSearchResults html

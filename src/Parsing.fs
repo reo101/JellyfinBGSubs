@@ -40,11 +40,22 @@ module Parsing =
             None
           else
             option {
-              let! day = Int32.TryParse parts.[0] |> function true, v -> Some v | _ -> None
-              let! year = Int32.TryParse parts.[2] |> function true, v -> Some v | _ -> None
+              let! day =
+                Int32.TryParse parts.[0]
+                |> function
+                  | true, v -> Some v
+                  | _ -> None
+
+              let! year =
+                Int32.TryParse parts.[2]
+                |> function
+                  | true, v -> Some v
+                  | _ -> None
+
               let! idx =
                 bulgarianMonths
                 |> Array.tryFindIndex (fun m -> m.Equals(parts.[1], StringComparison.OrdinalIgnoreCase))
+
               if idx > 0 then return (day, idx, year) else return! None
             }
             |> Option.map (fun (day, month, year) ->
@@ -96,8 +107,12 @@ module Parsing =
               None
             else
               let idValue = matchId.Groups.[1].Value
+
               let uploadDate =
-                if dateNode <> null then tryParseBulgarianDate (clean dateNode.InnerText) else None
+                if dateNode <> null then
+                  tryParseBulgarianDate (clean dateNode.InnerText)
+                else
+                  None
 
               Some
                 { Id = idValue
@@ -105,7 +120,8 @@ module Parsing =
                   ProviderName = "Subs.Sab.Bz"
                   Format = None
                   Author = None
-                  DownloadStrategy = DirectUrl (sabBzDownloadUrl href, "http://subs.sab.bz/")
+                  DownloadCount = None
+                  DownloadStrategy = DirectUrl(sabBzDownloadUrl href, "http://subs.sab.bz/")
                   UploadDate = uploadDate })
 
   // --- Subsunacs.net Parsing Logic ---
@@ -132,9 +148,14 @@ module Parsing =
           else
             let idValue = idMatch.Groups.[1].Value
             let tooltipStr = linkNode.GetAttributeValue("title", "")
+
             let uploadDate =
               Regex.Match(tooltipStr, "Дата: &lt;/b&gt;([^&<]+)")
-              |> fun m -> if m.Success then tryParseBulgarianDate (clean m.Groups.[1].Value) else None
+              |> fun m ->
+                if m.Success then
+                  tryParseBulgarianDate (clean m.Groups.[1].Value)
+                else
+                  None
 
             let downloadUrl = "https://subsunacs.net/getentry.php?id=" + idValue + "&ei=0"
 
@@ -144,5 +165,6 @@ module Parsing =
                 ProviderName = "Subsunacs"
                 Format = None
                 Author = None
-                DownloadStrategy = DirectUrl (downloadUrl, "https://subsunacs.net/")
+                DownloadCount = None
+                DownloadStrategy = DirectUrl(downloadUrl, "https://subsunacs.net/")
                 UploadDate = uploadDate })

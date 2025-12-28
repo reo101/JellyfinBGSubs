@@ -23,9 +23,11 @@ module Common =
 
   /// Active pattern to match array prefixes
   let (|Prefix|_|) (prefixBytes: byte[]) (arr: byte[]) =
-    if arr.Length >= prefixBytes.Length &&
-       Array.forall2 (=) prefixBytes (arr |> Array.take prefixBytes.Length) then
-      Some ()
+    if
+      arr.Length >= prefixBytes.Length
+      && Array.forall2 (=) prefixBytes (arr |> Array.take prefixBytes.Length)
+    then
+      Some()
     else
       None
 
@@ -109,14 +111,17 @@ module Common =
       doc.LoadHtml(pageHtml)
 
       let form = doc.DocumentNode.SelectSingleNode("//form")
+
       if form = null then
         None
       else
         let formAction = form.GetAttributeValue("action", "")
+
         if String.IsNullOrWhiteSpace formAction then
           None
         else
           let hiddenInputs = form.SelectNodes(".//input[@type='hidden']")
+
           let hiddenParams =
             hiddenInputs
             |> Seq.map (fun inp ->
@@ -126,17 +131,22 @@ module Common =
             |> Seq.filter (fun (name, _) -> not (String.IsNullOrWhiteSpace name))
             |> Map.ofSeq
 
-          Some (formAction, hiddenParams)
+          Some(formAction, hiddenParams)
     with _ ->
       None
 
-  let executeStrategy (strategy: DownloadStrategy) (httpClient: HttpClient) (cancellationToken: CancellationToken) (extractSubtitleStream: Stream -> string -> Stream * string) : System.Threading.Tasks.Task<Stream * string> =
+  let executeStrategy
+    (strategy: DownloadStrategy)
+    (httpClient: HttpClient)
+    (cancellationToken: CancellationToken)
+    (extractSubtitleStream: Stream -> string -> Stream * string)
+    : System.Threading.Tasks.Task<Stream * string> =
     task {
       match strategy with
-      | DirectUrl (url, referer) ->
+      | DirectUrl(url, referer) ->
         let request = new HttpRequestMessage(HttpMethod.Get, url)
         request.Headers.Referrer <- Uri(referer)
-        request.Headers.Add("User-Agent", getUserAgentHeader())
+        request.Headers.Add("User-Agent", getUserAgentHeader ())
 
         let! response = httpClient.SendAsync(request, cancellationToken)
         response.EnsureSuccessStatusCode() |> ignore
@@ -145,19 +155,21 @@ module Common =
           try
             (response.Content.Headers.ContentDisposition |> Option.ofObj)
             |> Option.bind (fun cd -> cd.FileName |> Option.ofObj)
-            |> Option.map (fun fileName -> Path.GetExtension fileName |> fun ext -> ext.TrimStart '.' |> fun e ->
-              if String.IsNullOrEmpty e then "srt" else e)
+            |> Option.map (fun fileName ->
+              Path.GetExtension fileName
+              |> fun ext -> ext.TrimStart '.' |> fun e -> if String.IsNullOrEmpty e then "srt" else e)
             |> Option.defaultValue "srt"
-          with _ -> "srt"
+          with _ ->
+            "srt"
 
         let! stream = response.Content.ReadAsStreamAsync(cancellationToken)
         return extractSubtitleStream stream detectedExt
 
-      | FormPage (pageUrl, referer) ->
+      | FormPage(pageUrl, referer) ->
         // Step 1: GET the subtitle page to extract form parameters
         let pageRequest = new HttpRequestMessage(HttpMethod.Get, pageUrl)
         pageRequest.Headers.Referrer <- Uri(referer)
-        pageRequest.Headers.Add("User-Agent", getUserAgentHeader())
+        pageRequest.Headers.Add("User-Agent", getUserAgentHeader ())
 
         let! pageResponse = httpClient.SendAsync(pageRequest, cancellationToken)
         pageResponse.EnsureSuccessStatusCode() |> ignore
@@ -171,7 +183,7 @@ module Common =
         | None ->
           // If form extraction fails, return empty stream
           return new MemoryStream() :> Stream, "srt"
-        | Some (formAction, hiddenParams) ->
+        | Some(formAction, hiddenParams) ->
           // Step 3: POST the form to get the download
           let formUrl =
             if formAction.StartsWith("http") then
@@ -189,7 +201,7 @@ module Common =
           let postRequest = new HttpRequestMessage(HttpMethod.Post, formUrl)
           postRequest.Content <- formContent
           postRequest.Headers.Referrer <- Uri(pageUrl)
-          postRequest.Headers.Add("User-Agent", getUserAgentHeader())
+          postRequest.Headers.Add("User-Agent", getUserAgentHeader ())
 
           let! downloadResponse = httpClient.SendAsync(postRequest, cancellationToken)
           downloadResponse.EnsureSuccessStatusCode() |> ignore
@@ -198,10 +210,12 @@ module Common =
             try
               (downloadResponse.Content.Headers.ContentDisposition |> Option.ofObj)
               |> Option.bind (fun cd -> cd.FileName |> Option.ofObj)
-              |> Option.map (fun fileName -> Path.GetExtension fileName |> fun ext -> ext.TrimStart '.' |> fun e ->
-                if String.IsNullOrEmpty e then "srt" else e)
+              |> Option.map (fun fileName ->
+                Path.GetExtension fileName
+                |> fun ext -> ext.TrimStart '.' |> fun e -> if String.IsNullOrEmpty e then "srt" else e)
               |> Option.defaultValue "srt"
-            with _ -> "srt"
+            with _ ->
+              "srt"
 
           let! stream = downloadResponse.Content.ReadAsStreamAsync(cancellationToken)
           return extractSubtitleStream stream detectedExt
