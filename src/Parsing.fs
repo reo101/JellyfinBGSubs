@@ -2,97 +2,145 @@ namespace Jellyfin.Plugin.BulgarianSubs
 
 open HtmlAgilityPack
 open System
+open System.IO
 open System.Text.RegularExpressions
+open ComputationExpressions
 
 module Parsing =
 
   // Helper to clean strings
   let private clean (s: string) =
-    if String.IsNullOrWhiteSpace(s) then "" else s.Trim()
+    if String.IsNullOrWhiteSpace s then "" else s.Trim()
 
-  // --- Subs.Sab.Bz Parsing Logic ---
-  let parseSabBz (html: string) =
+  // Bulgarian month names
+  let private bulgarianMonths =
+    [| ""
+       "Jan"
+       "Feb"
+       "Mar"
+       "Apr"
+       "May"
+       "Jun"
+       "Jul"
+       "Aug"
+       "Sep"
+       "Oct"
+       "Nov"
+       "Dec" |]
+
+  // Parse Bulgarian date strings (e.g., "14 Nov 2010") to DateTime in Bulgarian timezone (UTC+2)
+  let tryParseBulgarianDate (dateStr: string) : DateTime option =
+    if String.IsNullOrWhiteSpace dateStr then
+      None
+    else
+      try
+        dateStr.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        |> fun parts ->
+          if parts.Length < 3 then
+            None
+          else
+            option {
+              let! day = Int32.TryParse parts.[0] |> function true, v -> Some v | _ -> None
+              let! year = Int32.TryParse parts.[2] |> function true, v -> Some v | _ -> None
+              let! idx =
+                bulgarianMonths
+                |> Array.tryFindIndex (fun m -> m.Equals(parts.[1], StringComparison.OrdinalIgnoreCase))
+              if idx > 0 then return (day, idx, year) else return! None
+            }
+            |> Option.map (fun (day, month, year) ->
+              DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc).AddHours(2.0))
+      with _ ->
+        None
+
+  // Helper to load HTML from byte array with proper encoding detection
+  let private loadHtmlDocument (html: string) : HtmlDocument =
     let doc = HtmlDocument()
     doc.LoadHtml(html)
+    doc
 
-    // Select rows from the results table.
-    // Note: CSS classes might change, this is based on the research of the legacy plugin structure.
-    let rows = doc.DocumentNode.SelectNodes("//tr")
+  let loadHtmlDocumentFromBytes (bytes: byte[]) : HtmlDocument =
+    let doc = HtmlDocument()
 
-    match rows with
-    | null -> Seq.empty
-    | _ ->
-      rows
-      |> Seq.map (fun row ->
-        // Logic to extract title, ID, and link from table cells (td)
-        // This is an approximation based on standard forum structures
-        let linkNode = row.SelectSingleNode(".//a[contains(@href, 'act=download')]")
-        let titleNode = row.SelectSingleNode(".//td[1]") // Assuming 2nd column is title
+    // HtmlAgilityPack can detect encoding from HTML meta tags
+    // Load directly with autodetect enabled
+    use ms = new MemoryStream(bytes)
+    doc.Load(ms)
+    doc
 
-        match linkNode, titleNode with
-        | null, _
-        | _, null -> None
-        | l, t ->
-          let href = l.GetAttributeValue("href", "")
-          // Extract ID from href (e.g., attach_id=12345)
-          let matchId = Regex.Match(href, "attach_id=(\d+)")
+  // --- Subs.Sab.Bz Parsing Logic ---
+  let private sabBzDownloadUrl (href: string) =
+    if href.StartsWith("http://") || href.StartsWith("https://") then
+      href
+    else
+      "http://subs.sab.bz/" + href
 
-          if matchId.Success then
-            // BUG: `matchId.Groups.[1].Value` causes fsautocomplete type inference infinite loop
-            // Split method chain into intermediate assignments to workaround
-            let matchGroup = matchId.Groups.[1]
-            let idValue = matchGroup.Value
+  let parseSabBz (html: string) =
+    loadHtmlDocument html
+    |> fun doc ->
+      match doc.DocumentNode.SelectNodes("//tr") with
+      | null -> Seq.empty
+      | rows ->
+        rows
+        |> Seq.choose (fun row ->
+          let linkNode = row.SelectSingleNode(".//a[contains(@href, 'act=download')]")
+          let titleNode = row.SelectSingleNode(".//td[4]")
+          let dateNode = row.SelectSingleNode(".//td[5]")
 
-            Some
-              { Id = idValue
-                Title = clean t.InnerText
-                ProviderName = "Subs.Sab.Bz"
-                Format = None
-                Author = None
-                DownloadUrl = "http://subs.sab.bz/" + href }
+          if linkNode = null || titleNode = null then
+            None
           else
-            None)
-      |> Seq.choose id
+            let href = linkNode.GetAttributeValue("href", "")
+            let matchId = Regex.Match(href, "attach_id=(\d+)")
+
+            if not matchId.Success then
+              None
+            else
+              let idValue = matchId.Groups.[1].Value
+              let uploadDate =
+                if dateNode <> null then tryParseBulgarianDate (clean dateNode.InnerText) else None
+
+              Some
+                { Id = idValue
+                  Title = clean titleNode.InnerText
+                  ProviderName = "Subs.Sab.Bz"
+                  Format = None
+                  Author = None
+                  DownloadUrl = sabBzDownloadUrl href
+                  UploadDate = uploadDate })
 
   // --- Subsunacs.net Parsing Logic ---
   let parseSubsunacs (html: string) =
-    let doc = HtmlDocument()
+    let doc = new HtmlDocument()
     doc.LoadHtml(html)
 
-    // Similar scraping logic for Subsunacs
-    let rows = doc.DocumentNode.SelectNodes("//tr[@class='subs-row']") // Referenced in research
-
-    match rows with
+    match doc.DocumentNode.SelectNodes("//tbody/tr") with
     | null -> Seq.empty
-    | _ ->
+    | rows ->
       rows
-      |> Seq.map (fun row ->
-        // BUG: `row.SelectSingleNode(".//td[@class='title']").InnerText` causes fsautocomplete type inference infinite loop
-        // Split method chain into intermediate assignments to workaround
-        let titleNode = row.SelectSingleNode(".//td[@class='title']")
-        let title = if titleNode <> null then titleNode.InnerText else ""
-        let linkNode = row.SelectSingleNode(".//a[contains(@href, 'download.php')]")
+      |> Seq.choose (fun row ->
+        let titleNode = row.SelectSingleNode(".//td[@class='tdMovie']//a[1]")
+        let linkNode = row.SelectSingleNode(".//a[contains(@href, '/subtitles/')]")
 
-        match linkNode with
-        | null -> None
-        | l ->
-          let href = l.GetAttributeValue("href", "")
-          // Usually download.php?id=XXXX
-          let idMatch = Regex.Match(href, "id=(\d+)")
+        if titleNode = null || linkNode = null then
+          None
+        else
+          let href = linkNode.GetAttributeValue("href", "")
+          let idMatch = Regex.Match(href, "-(\d+)/?")
 
-          if idMatch.Success then
-            // BUG: `idMatch.Groups.[1].Value` causes fsautocomplete type inference infinite loop (same as above)
-            // Split method chain into intermediate assignments to workaround
-            let idGroup = idMatch.Groups.[1]
-            let idValue = idGroup.Value
+          if not idMatch.Success then
+            None
+          else
+            let idValue = idMatch.Groups.[1].Value
+            let tooltipStr = linkNode.GetAttributeValue("title", "")
+            let uploadDate =
+              Regex.Match(tooltipStr, "Дата: &lt;/b&gt;([^&<]+)")
+              |> fun m -> if m.Success then tryParseBulgarianDate (clean m.Groups.[1].Value) else None
 
             Some
               { Id = idValue
-                Title = clean title
+                Title = titleNode.InnerText.Trim() |> clean
                 ProviderName = "Subsunacs"
                 Format = None
                 Author = None
-                DownloadUrl = "https://subsunacs.net/" + href }
-          else
-            None)
-      |> Seq.choose id
+                DownloadUrl = "https://subsunacs.net" + href
+                UploadDate = uploadDate })

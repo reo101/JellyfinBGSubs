@@ -7,4 +7,5 @@ type InternalSubtitleInfo =
     ProviderName: string
     Format: string option
     Author: string option
-    DownloadUrl: string }
+    DownloadUrl: string
+    UploadDate: System.DateTime option }

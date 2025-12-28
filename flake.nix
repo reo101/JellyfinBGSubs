@@ -76,18 +76,19 @@
           JELLYFIN_PATH = "${pkgs.jellyfin}/lib/jellyfin";
 
           installPhase = ''
-            mkdir -p $out/BulgarianSubs_1.0.0.0
+            install -d -m 700 $out/BulgarianSubs_1.0.0.0
 
-            cp bin/Release/net9.0/linux-x64/Jellyfin.Plugin.BulgarianSubs.dll $out/BulgarianSubs_1.0.0.0/
+            # Copy all DLLs from release build
+            for dll in bin/Release/net9.0/linux-x64/*.dll; do
+              install -m 600 "$dll" $out/BulgarianSubs_1.0.0.0/
+            done
 
-            cp ${./meta.json} $out/BulgarianSubs_1.0.0.0/meta.json
+            install -m 600 ${./meta.json} $out/BulgarianSubs_1.0.0.0/meta.json
 
-            cp ${pkgs.fetchurl {
+            install -m 600 ${pkgs.fetchurl {
               url = "https://zamunda.net/pic/pic/z_icons/bgsubs.png";
               hash = "sha256-6WCRVR7KRYBEbPeynkGfIg5IlyTimrvDwINiaIdSMN4=";
             }} $out/BulgarianSubs_1.0.0.0/jellyfin-plugin-bulgariansubs.png
-
-            find $out/BulgarianSubs_1.0.0.0 -exec chmod 600 {} ';'
           '';
         };
 
