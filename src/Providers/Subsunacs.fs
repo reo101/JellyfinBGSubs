@@ -107,6 +107,7 @@ type Subsunacs() =
   interface IProvider with
     member _.Name = "Subsunacs"
     member _.Referer = referer
+    member _.ResponseEncoding = System.Text.Encoding.GetEncoding "windows-1251"
 
     member _.SearchUrl (query: string) (year: int option) : string =
       let yearParam = year |> Option.map (fun y -> $"&y={y}") |> Option.defaultValue ""

@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- The three root projects must not overwrite each other's NuGet assets. -->
+    <BaseIntermediateOutputPath>obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

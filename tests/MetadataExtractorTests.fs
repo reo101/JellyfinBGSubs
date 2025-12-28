@@ -65,15 +65,15 @@ let test_extractMetadata_movie_with_imdb () =
 
 let test_extractMetadata_episode () =
   let request =
-    createRequest "Breaking Bad" (Some "Breaking Bad") (Some 1) (Some 1) (Some 2008) None None
+    createRequest "Breaking Bad" (Some "Breaking Bad") (Some 1) (Some 10) (Some 2008) None None
 
   let metadata = MetadataExtractor.extract request
 
   assert (not metadata.IsMovie)
   assert metadata.IsEpisode
   assert (metadata.SeriesName = Some "Breaking Bad")
-  assert (metadata.EpisodeInfo = Some(1, 1))
-  printfn "✓ Extract episode metadata"
+  assert (metadata.EpisodeInfo = Some(1, 10))
+  printfn "✓ Extract complete episode metadata including two-digit episode numbers"
 
 let test_isHighConfidenceMatch () =
   // Movie with IMDb + year = high confidence

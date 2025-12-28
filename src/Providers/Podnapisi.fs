@@ -99,6 +99,7 @@ type Podnapisi() =
   interface IProvider with
     member _.Name = "Podnapisi.net"
     member _.Referer = referer
+    member _.ResponseEncoding = System.Text.Encoding.UTF8
 
     member _.SearchUrl (query: string) (year: int option) : string =
       let yearParam = year |> Option.map (fun y -> $"&sY={y}") |> Option.defaultValue ""

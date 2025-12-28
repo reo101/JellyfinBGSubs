@@ -135,6 +135,7 @@ type YavkaNet() =
   interface IProvider with
     member _.Name = "Yavka.net"
     member _.Referer = referer
+    member _.ResponseEncoding = System.Text.Encoding.GetEncoding "windows-1251"
 
     member _.SearchUrl (_query: string) (_year: int option) : string = "https://yavka.net/search"
 

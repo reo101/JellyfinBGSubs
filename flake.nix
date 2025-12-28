@@ -29,6 +29,7 @@
           fileset = fs.unions [
             (fs.fileFilter (f: f.hasExt "fs" || f.hasExt "fsproj") ./src)
             ./Jellyfin.Plugin.BulgarianSubs.fsproj
+            ./Directory.Build.props
           ];
         };
 
@@ -55,7 +56,8 @@
         inputs.treefmt-nix.flakeModule
         inputs.pre-commit-hooks.flakeModule
       ];
-      systems = import inputs.nix-systems;
+      # The current nixpkgs release no longer supports Intel macOS.
+      systems = lib.filter (system: system != "x86_64-darwin") (import inputs.nix-systems);
 
       perSystem = {
         config,
@@ -63,8 +65,8 @@
         lib,
         ...
       }: let
-        # Derive version from Jellyfin: "10.11.5" -> "10.11.5.0"
-        jellyfinVersion = pkgs.jellyfin.version;
+        # Jellyfin 12 uses two-component releases; manifests require System.Version.
+        jellyfinVersion = lib.concatStringsSep "." (lib.take 3 (lib.splitString "." pkgs.jellyfin.version ++ ["0" "0"]));
         pluginVersion = "${jellyfinVersion}.${pluginPatchVersion}";
         targetAbi = "${jellyfinVersion}.0";
       in {
@@ -100,8 +102,8 @@
 
           nugetDeps = ./deps.json;
 
-          dotnet-sdk = pkgs.dotnet-sdk_9;
-          dotnet-runtime = pkgs.dotnet-runtime_9;
+          dotnet-sdk = pkgs.dotnet-sdk_10;
+          dotnet-runtime = pkgs.dotnet-runtime_10;
 
           executables = [];
 
@@ -115,7 +117,7 @@
             assembliesJson = builtins.toJSON pluginAssemblies;
             copyAssemblies =
               lib.concatMapStringsSep "\n" (
-                dll: "install -m 600 bin/Release/net9.0/linux-x64/${dll} $out/BulgarianSubs_${pluginVersion}/"
+                dll: "install -m 600 bin/Release/net10.0/${pkgs.dotnetCorePackages.systemToDotnetRid pkgs.stdenv.hostPlatform.system}/${dll} $out/BulgarianSubs_${pluginVersion}/"
               )
               pluginAssemblies;
           in ''
@@ -146,14 +148,39 @@
                 version: $version,
                 status: "Active",
                 autoUpdate: false,
-                imagePath: "icon.png",
                 assemblies: $assemblies
               }' > $out/BulgarianSubs_${pluginVersion}/meta.json
 
-            install -m 600 ${pkgs.fetchurl {
-              url = "https://zamunda.net/pic/pic/z_icons/bgsubs.png";
-              hash = "sha256-6WCRVR7KRYBEbPeynkGfIg5IlyTimrvDwINiaIdSMN4=";
-            }} $out/BulgarianSubs_${pluginVersion}/icon.png
+          '';
+        };
+
+        packages.tests = pkgs.buildDotnetModule {
+          pname = "Jellyfin.Plugin.BulgarianSubs.Tests";
+          version = pluginVersion;
+          src = fs.toSource {
+            root = ./.;
+            fileset = fs.unions [
+              (fs.fileFilter (f: f.hasExt "fs") ./src)
+              (fs.fileFilter (f: f.hasExt "fs") ./tests)
+              ./Jellyfin.Plugin.BulgarianSubs.fsproj
+              ./Jellyfin.Plugin.BulgarianSubs.Tests.fsproj
+              ./Directory.Build.props
+            ];
+          };
+          projectFile = "Jellyfin.Plugin.BulgarianSubs.Tests.fsproj";
+          nugetDeps = ./deps.json;
+          dotnet-sdk = pkgs.dotnet-sdk_10;
+          dotnet-runtime = pkgs.dotnetCorePackages.aspnetcore_10_0;
+          executables = ["Jellyfin.Plugin.BulgarianSubs.Tests"];
+          env = {
+            JELLYFIN_PATH = "${pkgs.jellyfin}/lib/jellyfin";
+            TZDIR = "${pkgs.tzdata}/share/zoneinfo";
+          };
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            dotnet bin/Release/net10.0/${pkgs.dotnetCorePackages.systemToDotnetRid pkgs.stdenv.hostPlatform.system}/Jellyfin.Plugin.BulgarianSubs.Tests.dll
+            runHook postCheck
           '';
         };
 
@@ -188,8 +215,7 @@
             just
             prek
 
-            dotnet-sdk_9
-            nuget-to-json
+            dotnet-sdk_10
             fsautocomplete
             # FIXME: not packaged
             # fsharplint
@@ -205,10 +231,18 @@
           '';
         };
 
+        checks = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+          jellyfin = import ./tests/nixos.nix {
+            inherit pkgs;
+            plugin = config.packages.default;
+            tests = config.packages.tests;
+          };
+        };
+
         apps.update-deps = {
           type = "app";
           program = lib.getExe (pkgs.writeShellScriptBin "update-deps" ''
-            ${lib.getExe pkgs.nuget-to-json} . > ./deps.json
+            ${config.packages.default.fetch-deps} ./deps.json
             echo "✓ Updated deps.json"
           '');
         };

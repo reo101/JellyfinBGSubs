@@ -17,6 +17,10 @@ jobs:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN || '' }}
       - name: Build plugin
         run: nix build
+      - name: Run offline unit tests
+        run: nix build .#tests --no-link
+      - name: Run offline Jellyfin VM test
+        run: nix build .#checks.x86_64-linux.jellyfin --no-link -L
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

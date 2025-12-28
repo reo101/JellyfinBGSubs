@@ -11,6 +11,116 @@ open Jellyfin.Plugin.BulgarianSubs
 /// Common provider utilities
 module Common =
 
+  let private maximumDownloadBytes = 20L * 1024L * 1024L
+  let private maximumSubtitleBytes = 10L * 1024L * 1024L
+
+  /// Remote IDs, form targets and redirects may only use the provider's public origin.
+  let validateProviderUri (origin: Uri) (target: Uri) =
+    if
+      not target.IsAbsoluteUri
+      || (target.Scheme <> Uri.UriSchemeHttp && target.Scheme <> Uri.UriSchemeHttps)
+      || (origin.Scheme = Uri.UriSchemeHttps && target.Scheme <> Uri.UriSchemeHttps)
+      || not target.IsDefaultPort
+      || not (String.Equals(target.Host, origin.Host, StringComparison.OrdinalIgnoreCase))
+      || not (String.IsNullOrEmpty target.UserInfo)
+    then
+      raise (InvalidDataException "Subtitle URL does not belong to its provider")
+
+  /// The client's handler must disable automatic redirects so each hop is validated before sending.
+  let sendWithRedirects (httpClient: HttpClient) (request: HttpRequestMessage) cancellationToken =
+    let origin =
+      if isNull request.Headers.Referrer then
+        request.RequestUri
+      else
+        request.Headers.Referrer
+
+    let rec send (message: HttpRequestMessage) remaining =
+      task {
+        validateProviderUri origin message.RequestUri
+        let! response = httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+
+        if isNull response.RequestMessage then
+          response.RequestMessage <- message
+
+        let status = int response.StatusCode
+
+        if List.contains status [ 301; 302; 303; 307; 308 ] then
+          use redirectResponse = response
+
+          if remaining = 0 || isNull response.Headers.Location then
+            return raise (InvalidDataException "Invalid or excessive subtitle redirects")
+          else
+            let target = Uri(message.RequestUri, response.Headers.Location)
+            validateProviderUri origin target
+            validateProviderUri message.RequestUri target
+
+            let method =
+              if
+                status = 303
+                || ((status = 301 || status = 302) && message.Method = HttpMethod.Post)
+              then
+                HttpMethod.Get
+              else
+                message.Method
+
+            use nextRequest = new HttpRequestMessage(method, target)
+
+            for header in message.Headers do
+              nextRequest.Headers.TryAddWithoutValidation(header.Key, header.Value) |> ignore
+
+            if method = message.Method then
+              nextRequest.Content <- message.Content
+
+            return! send nextRequest (remaining - 1)
+        else
+          return response
+      }
+
+    send request 5
+
+  let private copyWithLimit (source: Stream) (destination: Stream) maximumBytes cancellationToken =
+    task {
+      let buffer = Array.zeroCreate<byte> 81920
+      let mutable total = 0L
+      let mutable finished = false
+
+      while not finished do
+        let! count = source.ReadAsync(buffer, 0, buffer.Length, cancellationToken)
+        finished <- count = 0
+        total <- total + int64 count
+
+        if total > maximumBytes then
+          raise (InvalidDataException $"Subtitle data exceeds {maximumBytes} bytes")
+
+        do! destination.WriteAsync(buffer, 0, count, cancellationToken)
+    }
+
+  let readResponseBytes (response: HttpResponseMessage) cancellationToken =
+    task {
+      let length = response.Content.Headers.ContentLength
+
+      if length.HasValue && length.Value > maximumDownloadBytes then
+        raise (InvalidDataException "Subtitle download exceeds 20 MiB")
+
+      use! source = response.Content.ReadAsStreamAsync(cancellationToken)
+      use destination = new MemoryStream()
+      do! copyWithLimit source destination maximumDownloadBytes cancellationToken
+      return destination.ToArray()
+    }
+
+  let private copySubtitle (source: Stream) =
+    let destination = new MemoryStream()
+
+    try
+      copyWithLimit source destination maximumSubtitleBytes CancellationToken.None
+      |> fun task -> task.GetAwaiter().GetResult()
+
+      destination.Position <- 0L
+      destination :> Stream
+    with _ ->
+      destination.Dispose()
+      reraise ()
+
   // ============================================================================
   // Archive Detection Utilities
   // ============================================================================
@@ -65,7 +175,9 @@ module Common =
     (responseStream: Stream)
     (_fileExtension: string)
     : Stream * string =
-    logger.LogInformation($"extractSubtitleStream: stream length={responseStream.Length}, position={responseStream.Position}")
+    logger.LogInformation(
+      $"extractSubtitleStream: stream length={responseStream.Length}, position={responseStream.Position}"
+    )
 
     // Check if it's a plain text file (uncompressed subtitle) or an archive
     let archiveFormat = detectArchiveFormat responseStream
@@ -75,42 +187,36 @@ module Common =
     | Some fmt ->
       try
         logger.LogInformation($"extractSubtitleStream: opening archive with format {fmt}")
-        use archive = ArchiveFactory.Open(responseStream)
+        use archive = ArchiveFactory.OpenArchive(responseStream)
         // Find first entry that ends with .srt or .sub
-        let entries = archive.Entries |> Seq.filter (fun e -> not e.IsDirectory) |> Seq.toList
-        logger.LogInformation($"extractSubtitleStream: archive has {entries.Length} entries")
-
-        for e in entries do
-          logger.LogInformation($"extractSubtitleStream: entry={e.Key}")
-
-        let entry = entries |> List.tryFind (fun e -> isSubtitleFile e.Key)
+        let entry =
+          archive.Entries
+          |> Seq.tryFind (fun e -> not e.IsDirectory && isSubtitleFile e.Key)
 
         match entry with
         | Some e ->
           logger.LogInformation($"extractSubtitleStream: extracting {e.Key}")
-          let ms = new MemoryStream()
-          e.WriteTo ms
-          ms.Position <- 0L
-          // HACK: fsautocomplete type inference bug - see FSAUTOCOMPLETE_BUGS.md
-          //       `Path.GetExtension(e.Key).TrimStart('.')` causes infinite loop
+
+          if e.Size > maximumSubtitleBytes then
+            raise (InvalidDataException "Extracted subtitle exceeds 10 MiB")
+
+          use entryStream = e.OpenEntryStream()
+          let stream = copySubtitle entryStream
           let ext = Path.GetExtension e.Key |> fun s -> s.TrimStart '.'
-          logger.LogInformation($"extractSubtitleStream: extracted {ms.Length} bytes, ext={ext}")
-          ms :> Stream, ext
+          logger.LogInformation($"extractSubtitleStream: extracted {stream.Length} bytes, ext={ext}")
+          stream, ext
         | None ->
           logger.LogWarning("extractSubtitleStream: no subtitle file found in archive")
-          // If no subtitle found in archive, return empty
-          Stream.Null, "srt"
+          raise (InvalidDataException "Archive contains no subtitle file")
       with ex ->
-        logger.LogError(ex, $"extractSubtitleStream: archive error: {ex.Message}")
-        Stream.Null, "srt"
+        logger.LogError(ex, "Could not extract subtitle archive")
+        reraise ()
     | None ->
       // Not an archive, return as-is (plain SRT/SUB file)
       // Copy to MemoryStream to ensure it's seekable and won't be disposed
-      let ms = new MemoryStream()
-      responseStream.CopyTo(ms)
-      ms.Position <- 0L
+      let stream = copySubtitle responseStream
       // Use detected extension or fallback to "srt"
-      ms :> Stream,
+      stream,
       if String.IsNullOrEmpty(_fileExtension) then
         "srt"
       else
@@ -143,7 +249,10 @@ module Common =
           let hiddenInputs = form.SelectNodes(".//input[@type='hidden']")
 
           let hiddenParams =
-            hiddenInputs
+            (if isNull hiddenInputs then
+               Seq.empty
+             else
+               hiddenInputs :> seq<_>)
             |> Seq.map (fun inp ->
               let name = inp.GetAttributeValue("name", "")
               let value = inp.GetAttributeValue("value", "")
@@ -164,11 +273,11 @@ module Common =
     task {
       match strategy with
       | DirectUrl(url, referer) ->
-        let request = new HttpRequestMessage(HttpMethod.Get, url)
+        use request = new HttpRequestMessage(HttpMethod.Get, url)
         request.Headers.Referrer <- Uri(referer)
         request.Headers.Add("User-Agent", getUserAgentHeader ())
 
-        let! response = httpClient.SendAsync(request, cancellationToken)
+        use! response = sendWithRedirects httpClient request cancellationToken
         response.EnsureSuccessStatusCode() |> ignore
 
         let detectedExt =
@@ -182,52 +291,37 @@ module Common =
           with _ ->
             "srt"
 
-        let! responseStream = response.Content.ReadAsStreamAsync(cancellationToken)
-        // Copy to MemoryStream to make it seekable (required for archive detection)
-        let ms = new MemoryStream()
-        do! responseStream.CopyToAsync(ms, cancellationToken)
-        ms.Position <- 0L
-        return extractSubtitleStream ms detectedExt
+        let! bytes = readResponseBytes response cancellationToken
+        use stream = new MemoryStream(bytes)
+        return extractSubtitleStream stream detectedExt
 
       | FormPage(pageUrl, referer) ->
         // Step 1: GET the subtitle page to extract form parameters
-        let pageRequest = new HttpRequestMessage(HttpMethod.Get, pageUrl)
+        use pageRequest = new HttpRequestMessage(HttpMethod.Get, pageUrl)
         pageRequest.Headers.Referrer <- Uri(referer)
         pageRequest.Headers.Add("User-Agent", getUserAgentHeader ())
 
-        let! pageResponse = httpClient.SendAsync(pageRequest, cancellationToken)
+        use! pageResponse = sendWithRedirects httpClient pageRequest cancellationToken
         pageResponse.EnsureSuccessStatusCode() |> ignore
 
-        let! pageBytes = pageResponse.Content.ReadAsByteArrayAsync(cancellationToken)
+        let! pageBytes = readResponseBytes pageResponse cancellationToken
         let pageEncoding = System.Text.Encoding.GetEncoding("windows-1251")
         let pageHtml = pageEncoding.GetString(pageBytes)
 
         // Step 2: Extract form action and hidden parameters
         match extractFormParameters pageHtml with
-        | None ->
-          // If form extraction fails, return empty stream
-          return new MemoryStream() :> Stream, "srt"
+        | None -> return raise (InvalidDataException "Subtitle page contains no download form")
         | Some(formAction, hiddenParams) ->
           // Step 3: POST the form to get the download
-          let formUrl =
-            if formAction.StartsWith("http") then
-              formAction
-            else if formAction.StartsWith("/") then
-              // Absolute path
-              let baseUri = Uri(pageUrl)
-              (new Uri(baseUri, formAction)).ToString()
-            else
-              // Relative path
-              let basePath = pageUrl.Substring(0, pageUrl.LastIndexOf('/') + 1)
-              basePath + formAction
-
-          let formContent = new FormUrlEncodedContent(hiddenParams)
-          let postRequest = new HttpRequestMessage(HttpMethod.Post, formUrl)
-          postRequest.Content <- formContent
-          postRequest.Headers.Referrer <- Uri(pageUrl)
+          let pageUri = pageResponse.RequestMessage.RequestUri
+          let formUrl = Uri(pageUri, formAction)
+          validateProviderUri (Uri referer) formUrl
+          use postRequest = new HttpRequestMessage(HttpMethod.Post, formUrl)
+          postRequest.Content <- new FormUrlEncodedContent(hiddenParams)
+          postRequest.Headers.Referrer <- pageUri
           postRequest.Headers.Add("User-Agent", getUserAgentHeader ())
 
-          let! downloadResponse = httpClient.SendAsync(postRequest, cancellationToken)
+          use! downloadResponse = sendWithRedirects httpClient postRequest cancellationToken
           downloadResponse.EnsureSuccessStatusCode() |> ignore
 
           let detectedExt =
@@ -241,10 +335,7 @@ module Common =
             with _ ->
               "srt"
 
-          let! responseStream = downloadResponse.Content.ReadAsStreamAsync(cancellationToken)
-          // Copy to MemoryStream to make it seekable (required for archive detection)
-          let ms = new MemoryStream()
-          do! responseStream.CopyToAsync(ms, cancellationToken)
-          ms.Position <- 0L
-          return extractSubtitleStream ms detectedExt
+          let! bytes = readResponseBytes downloadResponse cancellationToken
+          use stream = new MemoryStream(bytes)
+          return extractSubtitleStream stream detectedExt
     }

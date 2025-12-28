@@ -21,6 +21,7 @@ type TestLogger() =
 
     member _.Log<'TState>(level, _eventId, state: 'TState, _exception, formatter) =
       let message = formatter.Invoke(state, _exception)
+
       let levelStr =
         match level with
         | LogLevel.Error -> "ERR"
@@ -28,6 +29,7 @@ type TestLogger() =
         | LogLevel.Information -> "INF"
         | LogLevel.Debug -> "DBG"
         | _ -> "???"
+
       printfn "  [%s] %s" levelStr message
 
 let assert' condition message =
@@ -39,7 +41,7 @@ let assertEqual actual expected message =
     failwithf "Expected '%A' but got '%A': %s" expected actual message
 
 let httpClient =
-  let handler = new HttpClientHandler()
+  let handler = new HttpClientHandler(AllowAutoRedirect = false)
   let client = new HttpClient(handler)
   client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
   client
@@ -89,12 +91,21 @@ let ``test Subsunacs download - 7z archive`` () =
     assertEqual ext "srt" "Extension should be srt"
 
     // Verify it's valid SRT content
-    use reader = new StreamReader(subtitleStream, System.Text.Encoding.UTF8, true, 1024, true)
+    use reader =
+      new StreamReader(subtitleStream, System.Text.Encoding.UTF8, true, 1024, true)
+
     let firstLine = reader.ReadLine()
     subtitleStream.Position <- 0L
 
     assert' (not (String.IsNullOrWhiteSpace(firstLine))) "SRT should have content"
-    printfn "    First line: %s" (if firstLine.Length > 50 then firstLine.Substring(0, 50) + "..." else firstLine)
+
+    printfn
+      "    First line: %s"
+      (if firstLine.Length > 50 then
+         firstLine.Substring(0, 50) + "..."
+       else
+         firstLine)
+
     printfn "    ✓ Subsunacs 7z archive extracted successfully (%d bytes)" subtitleStream.Length
   }
 
@@ -150,8 +161,7 @@ let ``test SabBz download - ZIP archive`` () =
         assert' (ext = "srt" || ext = "sub") $"Extension should be srt or sub, got {ext}"
 
         printfn "    ✓ Sab.Bz subtitle extracted successfully (%d bytes, .%s)" subtitleStream.Length ext
-      | FormPage _ ->
-        printfn "    ⚠ Sab.Bz returned FormPage strategy, skipping"
+      | FormPage _ -> printfn "    ⚠ Sab.Bz returned FormPage strategy, skipping"
   }
 
 // ============================================================================
@@ -169,12 +179,9 @@ let ``test YavkaNet download - form submission`` () =
     searchRequest.Headers.Add("Referer", "https://yavka.net/subtitles/")
 
     let formData =
-      [ "s", "Inception"
-        "l", "BG" ]
-      |> List.map Collections.Generic.KeyValuePair
+      [ "s", "Inception"; "l", "BG" ] |> List.map Collections.Generic.KeyValuePair
 
-    searchRequest.Content <-
-        new FormUrlEncodedContent(formData)
+    searchRequest.Content <- new FormUrlEncodedContent(formData)
 
     let! searchResponse = httpClient.SendAsync(searchRequest, CancellationToken.None)
     let! searchBytes = searchResponse.Content.ReadAsByteArrayAsync()
@@ -194,7 +201,11 @@ let ``test YavkaNet download - form submission`` () =
       let strategy = FormPage(firstResult.PageUrl, "https://yavka.net/")
 
       let! (subtitleStream, ext) =
-        Common.executeStrategy strategy httpClient CancellationToken.None (Common.extractSubtitleStreamWithLogging logger)
+        Common.executeStrategy
+          strategy
+          httpClient
+          CancellationToken.None
+          (Common.extractSubtitleStreamWithLogging logger)
 
       assert' (subtitleStream.Length > 0L) $"Subtitle stream should not be empty, got {subtitleStream.Length} bytes"
       assert' (ext = "srt" || ext = "sub") $"Extension should be srt or sub, got {ext}"
@@ -224,19 +235,17 @@ let ``test archive format detection with real 7z`` () =
     let format = Common.detectArchiveFormat ms
 
     match format with
-    | Some Common.ArchiveFormat.SevenZ ->
-      printfn "    ✓ Correctly detected as 7z archive"
-    | Some other ->
-      failwithf "Expected SevenZ but got %A" other
-    | None ->
-      failwith "Expected archive format to be detected"
+    | Some Common.ArchiveFormat.SevenZ -> printfn "    ✓ Correctly detected as 7z archive"
+    | Some other -> failwithf "Expected SevenZ but got %A" other
+    | None -> failwith "Expected archive format to be detected"
   }
 
 let ``test plain SRT detection`` () =
   task {
     printfn "\n  Testing plain SRT detection..."
 
-    let srtContent = """1
+    let srtContent =
+      """1
 00:00:01,000 --> 00:00:03,000
 Test subtitle line
 
@@ -244,6 +253,7 @@ Test subtitle line
 00:00:04,000 --> 00:00:06,000
 Another line
 """
+
     let encoding = System.Text.Encoding.UTF8
     let srtBytes = encoding.GetBytes(srtContent)
     use ms = new MemoryStream(srtBytes)
@@ -251,10 +261,8 @@ Another line
     let format = Common.detectArchiveFormat ms
 
     match format with
-    | None ->
-      printfn "    ✓ Correctly detected as non-archive (plain text)"
-    | Some fmt ->
-      failwithf "Plain SRT should not be detected as archive, got %A" fmt
+    | None -> printfn "    ✓ Correctly detected as non-archive (plain text)"
+    | Some fmt -> failwithf "Plain SRT should not be detected as archive, got %A" fmt
   }
 
 // ============================================================================

@@ -37,13 +37,13 @@ type DebugLogger<'T>() =
 
 // HTTP factory for actual HTTP requests
 type RealHttpClientFactory() =
-   let client =
-     let handler = new HttpClientHandler()
-     handler.ServerCertificateCustomValidationCallback <- fun _ _ _ _ -> true // Accept all certificates for testing
-     new HttpClient(handler)
+  let client =
+    let handler = new HttpClientHandler(AllowAutoRedirect = false)
+    handler.ServerCertificateCustomValidationCallback <- fun _ _ _ _ -> true // Accept all certificates for testing
+    new HttpClient(handler)
 
-   interface IHttpClientFactory with
-     member _.CreateClient(_name: string) = client
+  interface IHttpClientFactory with
+    member _.CreateClient(_name: string) = client
 
 let private printHeader title =
   printfn "%s" title

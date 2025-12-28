@@ -36,6 +36,18 @@ watch:
 test:
     dotnet run --project Jellyfin.Plugin.BulgarianSubs.Tests.fsproj
 
+# Run live-site download tests (not part of CI)
+test-download:
+    dotnet run --project Jellyfin.Plugin.BulgarianSubs.Tests.fsproj -- --download
+
+# Run the offline Jellyfin API integration test in a NixOS VM
+test-vm:
+    nix build .#checks.x86_64-linux.jellyfin -L
+
+# Probe FSAutocomplete with real diagnostics, edits, hover and completion
+test-lsp:
+    dotnet run --project Jellyfin.Plugin.BulgarianSubs.Tests.fsproj -- --lsp
+
 # Run unit tests in watch mode
 test-watch:
     dotnet watch run --project Jellyfin.Plugin.BulgarianSubs.Tests.fsproj
@@ -44,11 +56,11 @@ test-watch:
 
 # Run quick debug tests (search Inception and The Matrix)
 debug: build-all
-    dotnet ./bin/Debug/net9.0/Jellyfin.Plugin.BulgarianSubs.Debugger.dll
+    dotnet run --no-build --project Jellyfin.Plugin.BulgarianSubs.Debugger.fsproj
 
 # Run interactive debugger
 debug-interactive: build-all
-    dotnet ./bin/Debug/net9.0/Jellyfin.Plugin.BulgarianSubs.Debugger.dll interactive
+    dotnet run --no-build --project Jellyfin.Plugin.BulgarianSubs.Debugger.fsproj -- interactive
 
 # === CODE QUALITY ===
 

@@ -7,6 +7,7 @@ open Jellyfin.Plugin.BulgarianSubs
 type IProvider =
   abstract member Name: string
   abstract member Referer: string
+  abstract member ResponseEncoding: System.Text.Encoding
   abstract member SearchUrl: query: string -> year: int option -> string
   abstract member CreateSearchRequest: url: string -> searchTerm: string -> HttpRequestMessage
   abstract member CreateDownloadStrategy: url: string -> DownloadStrategy

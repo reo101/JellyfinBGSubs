@@ -124,6 +124,7 @@ type SabBz() =
   interface IProvider with
     member _.Name = "Subs.Sab.Bz"
     member _.Referer = referer
+    member _.ResponseEncoding = System.Text.Encoding.GetEncoding "windows-1251"
 
     member _.SearchUrl (query: string) (year: int option) : string =
       let yearParam = year |> Option.map (fun y -> $"&yr={y}") |> Option.defaultValue ""
