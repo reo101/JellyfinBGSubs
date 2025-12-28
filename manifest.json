@@ -8,10 +8,10 @@
     "overview": "Bulgarian subtitle provider with multiple sources",
     "versions": [
       {
-        "version": "10.11.5.0",
+        "version": "10.11.5.1",
         "targetAbi": "10.11.5.0",
-        "sourceUrl": "https://github.com/reo101/JellyfinBGSubs/releases/download/v10.11.5.0/bulgariansubs-10.11.5.0.zip",
-        "checksum": "BAB181ACFF1C0F820DC8F8EE43796390"
+        "sourceUrl": "https://github.com/reo101/JellyfinBGSubs/releases/download/v10.11.5.1/bulgariansubs-10.11.5.1.zip",
+        "checksum": "DF92F6D27D8973D87399BE2D8AD6B7FB"
       }
     ]
   }

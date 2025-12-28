@@ -20,7 +20,7 @@
       # Single source of truth for plugin metadata
       pluginGuid = "93b5ed36-e282-4d55-9c49-0121203b7293";
       # Plugin version tracks Jellyfin version with our patch version appended
-      pluginPatchVersion = "0";
+      pluginPatchVersion = "1";
       pluginRepo = "reo101/JellyfinBGSubs";
 
       pluginSrc = let
