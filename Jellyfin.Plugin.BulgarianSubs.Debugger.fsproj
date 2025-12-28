@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="./src/Debugger.fs" />
+    <Compile Include="./debugger/Debugger.fs" />
   </ItemGroup>
 
 </Project>

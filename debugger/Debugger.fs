@@ -8,6 +8,8 @@ open System.Text
 open System.Threading
 open Microsoft.Extensions.Logging
 open MediaBrowser.Controller.Subtitles
+open MediaBrowser.Controller.Library
+open Jellyfin.Plugin.BulgarianSubs.Providers
 
 // Simple logging implementation for debugging
 type DebugLogger<'T>() =
@@ -36,13 +38,13 @@ type DebugLogger<'T>() =
 
 // HTTP factory for actual HTTP requests
 type RealHttpClientFactory() =
-  let client =
-    let handler = new HttpClientHandler()
-    handler.ServerCertificateCustomValidationCallback <- fun _ _ _ _ -> true // Accept all certificates for testing
-    new HttpClient(handler)
+   let client =
+     let handler = new HttpClientHandler()
+     handler.ServerCertificateCustomValidationCallback <- fun _ _ _ _ -> true // Accept all certificates for testing
+     new HttpClient(handler)
 
-  interface IHttpClientFactory with
-    member _.CreateClient(_name: string) = client
+   interface IHttpClientFactory with
+     member _.CreateClient(_name: string) = client
 
 let private printHeader title =
   printfn "%s" title
@@ -58,7 +60,7 @@ let testSearch (movieName: string) (year: int option) =
 
   let logger = DebugLogger<BulgarianSubtitleProvider>()
   let factory = RealHttpClientFactory()
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
   let providerInterface = provider :> ISubtitleProvider
 
   let request = SubtitleSearchRequest()
@@ -94,7 +96,7 @@ let testSearch (movieName: string) (year: int option) =
             let! bytes = response.Content.ReadAsByteArrayAsync() |> Async.AwaitTask
             let encoding = System.Text.Encoding.GetEncoding("windows-1251")
             let html = encoding.GetString(bytes)
-            return Parsing.parseSabBz html |> Seq.toList
+            return SabBzImpl.parseSearchResults html |> Seq.toList
           }
 
         task |> Async.RunSynchronously
@@ -155,7 +157,7 @@ let testSearchSubsunacs (movieName: string) (year: int option) =
         let encoding = System.Text.Encoding.GetEncoding("windows-1251")
         let html = encoding.GetString(bytes)
 
-        let internalResults = Parsing.parseSubsunacs html |> Seq.toList
+        let internalResults = SubsunuacsImpl.parseSearchResults html |> Seq.toList
 
         if internalResults.IsEmpty then
           printfn "\n✅ No results found from Subsunacs"
@@ -268,7 +270,7 @@ let testDownload (subtitleId: string) =
 
   let logger = DebugLogger<BulgarianSubtitleProvider>()
   let factory = RealHttpClientFactory()
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
   let providerInterface = provider :> ISubtitleProvider
 
   try
@@ -350,7 +352,7 @@ let testShowSearch (seriesName: string) =
 
   let logger = DebugLogger<BulgarianSubtitleProvider>()
   let factory = RealHttpClientFactory()
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
   let providerInterface = provider :> ISubtitleProvider
 
   let request = SubtitleSearchRequest()
@@ -385,7 +387,7 @@ let testEpisodeSearch (seriesName: string) (season: int) (episode: int) =
 
   let logger = DebugLogger<BulgarianSubtitleProvider>()
   let factory = RealHttpClientFactory()
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
   let providerInterface = provider :> ISubtitleProvider
 
   let request = SubtitleSearchRequest()
@@ -520,7 +522,7 @@ let interactiveTest () =
             // Run the full extraction flow test
             let logger = DebugLogger<BulgarianSubtitleProvider>()
             let factory = RealHttpClientFactory()
-            let provider = BulgarianSubtitleProvider(logger, factory)
+            let provider = BulgarianSubtitleProvider(logger, factory, null)
             let providerInterface = provider :> ISubtitleProvider
 
             let request = SubtitleSearchRequest()

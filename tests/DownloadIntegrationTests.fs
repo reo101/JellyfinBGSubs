@@ -286,8 +286,4 @@ let runTests () =
       return 1
   }
 
-[<EntryPoint>]
-let main _argv =
-  runTests ()
-  |> Async.AwaitTask
-  |> Async.RunSynchronously
+// Entry point removed - Tests.fs is the main entry point

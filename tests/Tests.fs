@@ -5,6 +5,7 @@ open System.Net.Http
 open System.Threading
 open Microsoft.Extensions.Logging
 open MediaBrowser.Controller.Subtitles
+open MediaBrowser.Controller.Library
 open Jellyfin.Plugin.BulgarianSubs.Providers
 
 // ============================================================================
@@ -50,9 +51,9 @@ type MockHttpMessageHandler(responses: (string * string) list) =
     |> Async.StartAsTask
 
 type MockHttpClientFactoryWithResponses(responses: (string * string) list) =
-  interface IHttpClientFactory with
-    member _.CreateClient(_name: string) =
-      new HttpClient(new MockHttpMessageHandler(responses))
+   interface IHttpClientFactory with
+     member _.CreateClient(_name: string) =
+       new HttpClient(new MockHttpMessageHandler(responses))
 
 // ============================================================================
 // Test utilities
@@ -79,35 +80,35 @@ let assertEqual actual expected message =
 // ============================================================================
 
 let ``test parseSabBz extracts subtitle info`` () =
-  let html =
-    """
-    <table>
-      <tr>
-        <td>1</td>
-        <td>2</td>
-        <td>3</td>
-        <td>Test Movie (2020)</td>
-        <td>15 Nov 2020</td>
-        <td><a href="index.php?act=download&attach_id=12345">Download</a></td>
-      </tr>
-    </table>
-  """
+   let html =
+     """
+     <table>
+       <tr>
+         <td>1</td>
+         <td>2</td>
+         <td>3</td>
+         <td>Test Movie (2020)</td>
+         <td>15 Nov 2020</td>
+         <td><a href="index.php?act=download&attach_id=12345">Download</a></td>
+       </tr>
+     </table>
+   """
 
-  let results = Parsing.parseSabBz html |> Seq.toList
+   let results = SabBzImpl.parseSearchResults html |> Seq.toList
 
-  assertNotEmpty results "parseSabBz should find results"
-  assertEqual results.[0].Id "12345" "ID should match"
-  assertEqual results.[0].ProviderName "Subs.Sab.Bz" "Provider should be Sab.Bz"
-  assertEqual results.[0].Title "Test Movie (2020)" "Title should match"
+   assertNotEmpty results "parseSearchResults should find results"
+   assertEqual results.[0].Id "12345" "ID should match"
+   assertEqual results.[0].ProviderName "Subs.Sab.Bz" "Provider should be Sab.Bz"
+   assertEqual results.[0].Title "Test Movie (2020)" "Title should match"
 
-  // Check DownloadStrategy
-  match results.[0].DownloadStrategy with
-  | DirectUrl(url, referer) ->
-    assert' (url.Contains("http://subs.sab.bz/")) "URL should be from Sab.Bz"
-    assertEqual referer "http://subs.sab.bz/" "Referer should be set"
-  | FormPage _ -> failwith "Sab.Bz should use DirectUrl"
+   // Check DownloadStrategy
+   match results.[0].DownloadStrategy with
+   | DirectUrl(url, referer) ->
+     assert' (url.Contains("http://subs.sab.bz/")) "URL should be from Sab.Bz"
+     assertEqual referer "http://subs.sab.bz/" "Referer should be set"
+   | FormPage _ -> failwith "Sab.Bz should use DirectUrl"
 
-  printfn "✓ parseSabBz extracts subtitle info"
+   printfn "✓ parseSabBz extracts subtitle info"
 
 let ``test parseSabBz handles missing links`` () =
   let html =
@@ -121,7 +122,7 @@ let ``test parseSabBz handles missing links`` () =
     </table>
   """
 
-  let results = Parsing.parseSabBz html |> Seq.toList
+  let results = SabBzImpl.parseSearchResults html |> Seq.toList
 
   assertEmpty results "Should return empty on no links"
   printfn "✓ parseSabBz handles missing links"
@@ -137,9 +138,9 @@ let ``test parseSubsunacs extracts info`` () =
     </tbody>
   """
 
-  let results = Parsing.parseSubsunacs html |> Seq.toList
+  let results = SubsunuacsImpl.parseSearchResults html |> Seq.toList
 
-  assertNotEmpty results "parseSubsunacs should find results"
+  assertNotEmpty results "parseSearchResults should find results"
   assertEqual results.[0].Id "67890" "ID should match"
   assertEqual results.[0].ProviderName "Subsunacs" "Provider should be Subsunacs"
   assertEqual results.[0].Title "Test Movie" "Title should match"
@@ -154,12 +155,12 @@ let ``test parseSubsunacs extracts info`` () =
   printfn "✓ parseSubsunacs extracts info"
 
 let ``test parseSubsunacs returns empty on no matches`` () =
-  let html = "<div>No subtitles here</div>"
+   let html = "<div>No subtitles here</div>"
 
-  let results = Parsing.parseSubsunacs html |> Seq.toList
+   let results = SubsunuacsImpl.parseSearchResults html |> Seq.toList
 
-  assertEmpty results "Should return empty"
-  printfn "✓ parseSubsunacs returns empty on no matches"
+   assertEmpty results "Should return empty"
+   printfn "✓ parseSubsunacs returns empty on no matches"
 
 let ``test parseSabBz normalizes URLs`` () =
   let html =
@@ -176,7 +177,7 @@ let ``test parseSabBz normalizes URLs`` () =
     </table>
   """
 
-  let results = Parsing.parseSabBz html |> Seq.toList
+  let results = SabBzImpl.parseSearchResults html |> Seq.toList
 
   assertNotEmpty results "Should find results"
 
@@ -194,7 +195,7 @@ let ``test provider name`` () =
   let logger = MockLogger<BulgarianSubtitleProvider>()
   let factory = MockHttpClientFactory()
 
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
 
   let providerInterface = provider :> ISubtitleProvider
   assertEqual providerInterface.Name "Bulgarian Subtitles (Sab.bz, Subsunacs & Yavka)" "Provider name should match"
@@ -204,7 +205,7 @@ let ``test supported media types`` () =
   let logger = MockLogger<BulgarianSubtitleProvider>()
   let factory = MockHttpClientFactory()
 
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
 
   let providerInterface = provider :> ISubtitleProvider
   let mediaTypes = providerInterface.SupportedMediaTypes |> Seq.toList
@@ -354,7 +355,7 @@ let ``test provider Search formats TV episode requests`` () =
   // by creating a SubtitleSearchRequest with season/episode info
   let logger = MockLogger<BulgarianSubtitleProvider>()
   let factory = MockHttpClientFactory()
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
 
   let request = SubtitleSearchRequest()
   request.Language <- "bg"
@@ -376,7 +377,7 @@ let ``test provider Search formats TV episode requests`` () =
 let ``test provider Search uses SeriesName for TV episodes`` () =
   let logger = MockLogger<BulgarianSubtitleProvider>()
   let factory = MockHttpClientFactory()
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
 
   let request = SubtitleSearchRequest()
   request.Language <- "bg"
@@ -393,7 +394,7 @@ let ``test provider Search handles missing season/episode info`` () =
   // Movies don't have season/episode, so the provider should fall back to Name
   let logger = MockLogger<BulgarianSubtitleProvider>()
   let factory = MockHttpClientFactory()
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
 
   let request = SubtitleSearchRequest()
   request.Language <- "bg"
@@ -412,7 +413,7 @@ let ``test provider language filtering rejects non-Bulgarian`` () =
   // results for unsupported languages
   let logger = MockLogger<BulgarianSubtitleProvider>()
   let factory = MockHttpClientFactory()
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
   let providerInterface = provider :> ISubtitleProvider
 
   let request = SubtitleSearchRequest()
@@ -430,7 +431,7 @@ let ``test provider language filtering rejects non-Bulgarian`` () =
 let ``test Search returns empty for non-Bulgarian language`` () =
   let logger = MockLogger<BulgarianSubtitleProvider>()
   let factory = MockHttpClientFactory()
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
   let providerInterface = provider :> ISubtitleProvider
 
   let request = SubtitleSearchRequest()
@@ -475,7 +476,7 @@ let ``test Search with mocked Sab.Bz response`` () =
 
   let logger = MockLogger<BulgarianSubtitleProvider>()
   let factory = MockHttpClientFactoryWithResponses(responses)
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
   let providerInterface = provider :> ISubtitleProvider
 
   let request = SubtitleSearchRequest()
@@ -512,7 +513,7 @@ let ``test Search with mocked Subsunacs response`` () =
 
   let logger = MockLogger<BulgarianSubtitleProvider>()
   let factory = MockHttpClientFactoryWithResponses(responses)
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
   let providerInterface = provider :> ISubtitleProvider
 
   let request = SubtitleSearchRequest()
@@ -562,7 +563,7 @@ let ``test Search with both providers returning results`` () =
 
   let logger = MockLogger<BulgarianSubtitleProvider>()
   let factory = MockHttpClientFactoryWithResponses(responses)
-  let provider = BulgarianSubtitleProvider(logger, factory)
+  let provider = BulgarianSubtitleProvider(logger, factory, null)
   let providerInterface = provider :> ISubtitleProvider
 
   let request = SubtitleSearchRequest()
