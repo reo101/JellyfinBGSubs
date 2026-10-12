@@ -170,8 +170,9 @@ module Common =
     name.EndsWith ".srt" || name.EndsWith ".sub"
 
   /// Extract subtitle stream from response (archive or plain file)
-  let extractSubtitleStreamWithLogging
+  let extractSubtitleStreamWithContext
     (logger: ILogger)
+    (context: SubtitleSelectionContext option)
     (responseStream: Stream)
     (_fileExtension: string)
     : Stream * string =
@@ -188,10 +189,27 @@ module Common =
       try
         logger.LogInformation($"extractSubtitleStream: opening archive with format {fmt}")
         use archive = ArchiveFactory.OpenArchive(responseStream)
-        // Find first entry that ends with .srt or .sub
+
         let entry =
-          archive.Entries
-          |> Seq.tryFind (fun e -> not e.IsDirectory && isSubtitleFile e.Key)
+          match context with
+          | None ->
+            archive.Entries
+            |> Seq.tryFind (fun e -> not e.IsDirectory && isSubtitleFile e.Key)
+          | Some selection ->
+            let entries = archive.Entries |> Seq.truncate 4097 |> Seq.toList
+
+            if entries.Length > 4096 then
+              raise (InvalidDataException "Archive contains too many entries")
+
+            let subtitles =
+              entries |> List.filter (fun e -> not e.IsDirectory && isSubtitleFile e.Key)
+
+            let name =
+              subtitles
+              |> List.map (fun e -> e.Key)
+              |> SubtitleMatching.selectArchiveName selection
+
+            subtitles |> List.tryFind (fun e -> e.Key = name)
 
         match entry with
         | Some e ->
@@ -221,6 +239,10 @@ module Common =
         "srt"
       else
         _fileExtension
+
+  /// Legacy callers without media context retain the original first-entry behavior.
+  let extractSubtitleStreamWithLogging logger responseStream fileExtension =
+    extractSubtitleStreamWithContext logger None responseStream fileExtension
 
   // ============================================================================
   // Download Strategy Execution

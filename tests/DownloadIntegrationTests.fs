@@ -4,6 +4,8 @@ open System
 open System.IO
 open System.Net.Http
 open System.Threading
+open System.Text
+open System.Text.RegularExpressions
 open Microsoft.Extensions.Logging
 open Jellyfin.Plugin.BulgarianSubs.Providers
 
@@ -41,6 +43,7 @@ let assertEqual actual expected message =
     failwithf "Expected '%A' but got '%A': %s" expected actual message
 
 let httpClient =
+  Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)
   let handler = new HttpClientHandler(AllowAutoRedirect = false)
   let client = new HttpClient(handler)
   client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
@@ -52,23 +55,53 @@ let logger = TestLogger() :> ILogger
 // Download and Extract Tests
 // ============================================================================
 
-let downloadAndExtract (url: string) (referer: string) =
+let private movieContext: SubtitleSelectionContext =
+  { Title = "Inception"
+    Year = Nullable 2010
+    Season = Nullable()
+    Episode = Nullable()
+    FileName = "Inception.2010.mkv" }
+
+let private episodeContext: SubtitleSelectionContext =
+  { Title = "La Casa De Papel"
+    Year = Nullable()
+    Season = Nullable 1
+    Episode = Nullable 1
+    FileName = "La.Casa.De.Papel.S01E01.720p.SunshineStudio.mkv" }
+
+let downloadAndExtract context (url: string) (referer: string) =
   task {
     printfn "    Downloading from: %s" url
-    let request = new HttpRequestMessage(HttpMethod.Get, url)
+    use request = new HttpRequestMessage(HttpMethod.Get, url)
     request.Headers.Referrer <- Uri(referer)
 
-    let! response = httpClient.SendAsync(request, CancellationToken.None)
+    use! response = Common.sendWithRedirects httpClient request CancellationToken.None
     response.EnsureSuccessStatusCode() |> ignore
 
-    let! responseStream = response.Content.ReadAsStreamAsync(CancellationToken.None)
-    let ms = new MemoryStream()
+    assert'
+      (response.Content.Headers.ContentType = null
+       || response.Content.Headers.ContentType.MediaType <> "text/html")
+      "Download returned an HTML page rather than subtitles"
+
+    use! responseStream = response.Content.ReadAsStreamAsync(CancellationToken.None)
+    use ms = new MemoryStream()
     do! responseStream.CopyToAsync(ms, CancellationToken.None)
     ms.Position <- 0L
 
     printfn "    Downloaded %d bytes" ms.Length
 
-    let (subtitleStream, ext) = Common.extractSubtitleStreamWithLogging logger ms "srt"
+    let (subtitleStream, ext) =
+      Common.extractSubtitleStreamWithContext logger context ms "srt"
+
+    if String.Equals(ext, "srt", StringComparison.OrdinalIgnoreCase) then
+      use reader = new StreamReader(subtitleStream, Encoding.UTF8, true, 1024, true)
+      let content = reader.ReadToEnd()
+      subtitleStream.Position <- 0L
+
+      if not (Regex.IsMatch(content, @"(?m)^\s*[0-9]{2}:[0-9]{2}:[0-9]{2}[,.][0-9]{3}\s*-->")) then
+        subtitleStream.Dispose()
+        failwith "Downloaded SRT contains no subtitle timing cues"
+
     return (subtitleStream, ext, ms.Length)
   }
 
@@ -84,7 +117,7 @@ let ``test Subsunacs download - 7z archive`` () =
     let url = "https://subsunacs.net/subtitles/La_Casa_De_Papel_01x01-125257/"
     let referer = "https://subsunacs.net/search.php"
 
-    let! (subtitleStream, ext, downloadSize) = downloadAndExtract url referer
+    let! (subtitleStream, ext, downloadSize) = downloadAndExtract (Some episodeContext) url referer
 
     assert' (downloadSize > 0L) "Should download some bytes"
     assert' (subtitleStream.Length > 0L) $"Subtitle stream should not be empty, got {subtitleStream.Length} bytes"
@@ -114,10 +147,23 @@ let ``test Subsunacs download - movie subtitle`` () =
     printfn "\n  Testing Subsunacs movie download..."
 
     // Inception - a movie subtitle
-    let url = "https://subsunacs.net/subtitles/Inception-60702/"
+    let! bytes = httpClient.GetByteArrayAsync("https://subsunacs.net/search.php?m=Inception&y=2010&t=Submit")
+
+    let results =
+      Encoding.GetEncoding(1251).GetString(bytes)
+      |> SubsunacsImpl.parseSearchResults
+      |> Seq.toList
+
+    assert' (not results.IsEmpty) "Subsunacs search returned no movie results"
+
+    let url =
+      match results.Head.DownloadStrategy with
+      | DirectUrl(url, _) -> url
+      | _ -> failwith "Expected direct Subsunacs download"
+
     let referer = "https://subsunacs.net/search.php"
 
-    let! (subtitleStream, ext, downloadSize) = downloadAndExtract url referer
+    let! (subtitleStream, ext, downloadSize) = downloadAndExtract (Some movieContext) url referer
 
     assert' (downloadSize > 0L) "Should download some bytes"
     assert' (subtitleStream.Length > 0L) $"Subtitle stream should not be empty, got {subtitleStream.Length} bytes"
@@ -140,21 +186,22 @@ let ``test SabBz download - ZIP archive`` () =
     let request = new HttpRequestMessage(HttpMethod.Get, searchUrl)
     request.Headers.Add("User-Agent", "Mozilla/5.0")
 
-    let! searchResponse = httpClient.SendAsync(request, CancellationToken.None)
+    use! searchResponse = httpClient.SendAsync(request, CancellationToken.None)
+    searchResponse.EnsureSuccessStatusCode() |> ignore
     let! searchHtml = searchResponse.Content.ReadAsStringAsync()
 
     // Parse to find a download link
     let results = SabBzImpl.parseSearchResults searchHtml |> Seq.toList
 
     if results.Length = 0 then
-      printfn "    ⚠ No results from Sab.Bz search, skipping download test"
+      failwith "Sab.Bz search returned no results"
     else
       let firstResult = results.[0]
       printfn "    Found: %s" firstResult.Title
 
       match firstResult.DownloadStrategy with
       | DirectUrl(url, referer) ->
-        let! (subtitleStream, ext, downloadSize) = downloadAndExtract url referer
+        let! (subtitleStream, ext, downloadSize) = downloadAndExtract (Some movieContext) url referer
 
         assert' (downloadSize > 0L) "Should download some bytes"
         assert' (subtitleStream.Length > 0L) $"Subtitle stream should not be empty, got {subtitleStream.Length} bytes"
@@ -174,24 +221,19 @@ let ``test YavkaNet download - form submission`` () =
 
     // Search for something on Yavka
     let searchUrl = "https://yavka.net/search"
-    let searchRequest = new HttpRequestMessage(HttpMethod.Post, searchUrl)
-    searchRequest.Headers.Add("User-Agent", "Mozilla/5.0")
-    searchRequest.Headers.Add("Referer", "https://yavka.net/subtitles/")
+    let provider = YavkaNet() :> IProvider
+    use searchRequest = provider.CreateSearchRequest searchUrl "Inception"
 
-    let formData =
-      [ "s", "Inception"; "l", "BG" ] |> List.map Collections.Generic.KeyValuePair
-
-    searchRequest.Content <- new FormUrlEncodedContent(formData)
-
-    let! searchResponse = httpClient.SendAsync(searchRequest, CancellationToken.None)
+    use! searchResponse = httpClient.SendAsync(searchRequest, CancellationToken.None)
+    searchResponse.EnsureSuccessStatusCode() |> ignore
     let! searchBytes = searchResponse.Content.ReadAsByteArrayAsync()
-    let encoding = System.Text.Encoding.GetEncoding("windows-1251")
+    let encoding = provider.ResponseEncoding
     let searchHtml = encoding.GetString(searchBytes)
 
     let results = YavkaNetImpl.parseSearchResults searchHtml |> Seq.toList
 
     if results.Length = 0 then
-      printfn "    ⚠ No results from Yavka.net search, skipping download test"
+      failwith "Yavka search returned no results"
     else
       let firstResult = results.[0]
       printfn "    Found: %s" firstResult.Title
@@ -275,23 +317,25 @@ let runTests () =
     printfn "Download Integration Tests"
     printfn "=========================================="
 
-    try
-      // Archive detection tests (local, fast)
-      do! ``test plain SRT detection`` ()
+    let tests =
+      [ "plain SRT detection", ``test plain SRT detection``
+        "7z detection", ``test archive format detection with real 7z``
+        "Subsunacs episode", ``test Subsunacs download - 7z archive``
+        "Subsunacs movie", ``test Subsunacs download - movie subtitle``
+        "Sab.Bz movie", ``test SabBz download - ZIP archive``
+        "Yavka search/download", ``test YavkaNet download - form submission`` ]
 
-      // Real download tests (require network)
-      do! ``test archive format detection with real 7z`` ()
-      do! ``test Subsunacs download - 7z archive`` ()
-      do! ``test Subsunacs download - movie subtitle`` ()
-      do! ``test SabBz download - ZIP archive`` ()
-      do! ``test YavkaNet download - form submission`` ()
+    let mutable failures = 0
 
-      printfn "\n✅ All download integration tests passed!"
-      return 0
-    with ex ->
-      printfn "\n❌ Download integration test failed: %s" ex.Message
-      printfn "Stack trace: %s" ex.StackTrace
-      return 1
+    for name, run in tests do
+      try
+        do! run ()
+      with ex ->
+        failures <- failures + 1
+        printfn "Failed %s: %s" name ex.Message
+
+    printfn "Live checks: %d passed, %d failed" (tests.Length - failures) failures
+    return if failures = 0 then 0 else 1
   }
 
 // Entry point removed - Tests.fs is the main entry point

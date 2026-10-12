@@ -819,6 +819,7 @@ let runAllTests () =
 
     // Download trust boundaries and resource limits
     DownloadSecurityTests.runTests ()
+    SubtitleMatchingTests.runTests ()
 
     // Metadata extractor tests
     MetadataExtractorTests.runTests ()

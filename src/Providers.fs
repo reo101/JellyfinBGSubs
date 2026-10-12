@@ -4,7 +4,7 @@ open System
 open System.Collections.Generic
 open System.Net.Http
 open System.Text
-open System.Text.RegularExpressions
+open System.IO
 open System.Threading
 open MediaBrowser.Controller.Subtitles
 open MediaBrowser.Controller.Providers
@@ -64,13 +64,6 @@ type BulgarianSubtitleProvider
     | "bulgarian" -> true
     | _ -> false
 
-  let matchesEpisode (season: int) (episode: int) (title: string) =
-    Regex.IsMatch(
-      title,
-      $"(?<![a-z0-9])(?:s0?{season}e0?{episode}|0?{season}x0?{episode})(?![0-9])",
-      RegexOptions.IgnoreCase
-    )
-
   interface ISubtitleProvider with
     // Jellyfin derives the provider identifier from this name; configuration must not change it.
     member _.Name = "Bulgarian Subtitles"
@@ -96,6 +89,17 @@ type BulgarianSubtitleProvider
             )
             |> Option.defaultValue request.Name
 
+          let context =
+            { Title = searchName
+              Year = metadata.Year |> Option.toNullable
+              Season = metadata.EpisodeInfo |> Option.map fst |> Option.toNullable
+              Episode = metadata.EpisodeInfo |> Option.map snd |> Option.toNullable
+              FileName =
+                if String.IsNullOrWhiteSpace request.MediaPath then
+                  ""
+                else
+                  Path.GetFileName(request.MediaPath.Replace('\\', '/')) }
+
           let searchTerms =
             MetadataExtractor.buildEnhancedSearchTerms metadata searchName
             |> List.truncate 3
@@ -120,21 +124,18 @@ type BulgarianSubtitleProvider
                 let! bytes = Common.readResponseBytes response timeout.Token
                 let text = provider.ResponseEncoding.GetString bytes
 
-                for item in provider.ParseResults text do
-                  let episodeMatches =
-                    match metadata.EpisodeInfo with
-                    | Some(season, episode) -> matchesEpisode season episode item.Title
-                    | None -> true
+                for item in
+                  provider.ParseResults text
+                  |> Seq.filter (fun item -> SubtitleMatching.isEpisodeCandidate context item.Title) do
 
                   let downloadUrl =
                     match item.DownloadStrategy with
                     | DirectUrl(url, _)
                     | FormPage(url, _) -> url
 
-                  let identifier =
-                    $"{provider.Name}::{Convert.ToBase64String(Encoding.UTF8.GetBytes downloadUrl)}"
+                  let identifier = SubtitleIdentifier.encode provider.Name downloadUrl context
 
-                  if episodeMatches && identifiers.Add identifier then
+                  if identifiers.Add identifier then
                     let info = RemoteSubtitleInfo()
                     info.Id <- identifier
                     info.Name <- item.Title
@@ -159,7 +160,8 @@ type BulgarianSubtitleProvider
 
           return
             results
-            |> Seq.sortByDescending (fun result -> result.DownloadCount.GetValueOrDefault())
+            |> Seq.sortByDescending (fun result ->
+              SubtitleMatching.rank context result.Name, result.DownloadCount.GetValueOrDefault())
             |> Seq.toList
             :> seq<RemoteSubtitleInfo>
       }
@@ -168,25 +170,12 @@ type BulgarianSubtitleProvider
       task {
         cancellationToken.ThrowIfCancellationRequested()
 
-        let parts =
-          if isNull identifier then
-            [||]
-          else
-            identifier.Split("::", 2, StringSplitOptions.None)
-
-        if parts.Length <> 2 then
-          invalidArg "identifier" "Invalid subtitle identifier"
+        let providerName, url, context = SubtitleIdentifier.decode identifier
 
         let provider =
           getEnabledProviders ()
-          |> List.tryFind (fun provider -> provider.Name = parts.[0])
+          |> List.tryFind (fun provider -> provider.Name = providerName)
           |> Option.defaultWith (fun () -> invalidArg "identifier" "Unknown or disabled subtitle provider")
-
-        let url =
-          try
-            Encoding.UTF8.GetString(Convert.FromBase64String parts.[1])
-          with :? FormatException ->
-            invalidArg "identifier" "Invalid subtitle URL encoding"
 
         match Uri.TryCreate(url, UriKind.Absolute) with
         | true, uri -> Common.validateProviderUri (Uri provider.Referer) uri
@@ -200,7 +189,7 @@ type BulgarianSubtitleProvider
             (provider.CreateDownloadStrategy url)
             httpClient
             timeout.Token
-            (Common.extractSubtitleStreamWithLogging logger)
+            (Common.extractSubtitleStreamWithContext logger context)
 
         let response = SubtitleResponse()
         response.Format <- extension

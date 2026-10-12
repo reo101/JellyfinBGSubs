@@ -21,6 +21,7 @@
     <Compile Include="./tests/MetadataExtractorTests.fs" />
     <Compile Include="./tests/DownloadIntegrationTests.fs" />
     <Compile Include="./tests/DownloadSecurityTests.fs" />
+    <Compile Include="./tests/SubtitleMatchingTests.fs" />
     <Compile Include="./tests/JellyfinIntegrationTests.fs" />
     <Compile Include="./tests/FsAutocompleteTests.fs" />
     <Compile Include="./tests/Tests.fs" />

@@ -135,7 +135,7 @@ type YavkaNet() =
   interface IProvider with
     member _.Name = "Yavka.net"
     member _.Referer = referer
-    member _.ResponseEncoding = System.Text.Encoding.GetEncoding "windows-1251"
+    member _.ResponseEncoding = System.Text.Encoding.UTF8
 
     member _.SearchUrl (_query: string) (_year: int option) : string = "https://yavka.net/search"
 
@@ -147,7 +147,7 @@ type YavkaNet() =
 
       req.Content <-
         new FormUrlEncodedContent(
-          [ new KeyValuePair<string, string>("s", searchTerm)
+          [ new KeyValuePair<string, string>("sea", searchTerm)
             new KeyValuePair<string, string>("y", "")
             new KeyValuePair<string, string>("c", "")
             new KeyValuePair<string, string>("u", "")

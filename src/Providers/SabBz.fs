@@ -11,11 +11,9 @@ module SabBzImpl =
   let private clean (s: string) =
     if String.IsNullOrWhiteSpace s then "" else s.Trim()
 
-  let private downloadUrl (href: string) =
-    if href.StartsWith("http://") || href.StartsWith("https://") then
-      href
-    else
-      "http://subs.sab.bz/" + href
+  // Search links contain HTML entities and transient session IDs.
+  let private downloadUrl id =
+    $"http://subs.sab.bz/index.php?act=download&attach_id={id}"
 
   let private tryParseInt (s: string) =
     match Int32.TryParse(clean s) with
@@ -111,7 +109,7 @@ module SabBzImpl =
                   DownloadCount = downloads
                   FrameRate = fps
                   Rating = None
-                  DownloadStrategy = DirectUrl(downloadUrl href, "http://subs.sab.bz/")
+                  DownloadStrategy = DirectUrl(downloadUrl idValue, "http://subs.sab.bz/")
                   UploadDate = uploadDate
                   InfoPageUrl = Some infoPageUrl })
     with _ ->

@@ -5,6 +5,15 @@ type DownloadStrategy =
   | DirectUrl of url: string * referer: string
   | FormPage of pageUrl: string * referer: string
 
+/// Media context carried by new subtitle IDs for stateless archive selection.
+[<CLIMutable>]
+type SubtitleSelectionContext =
+  { Title: string
+    Year: System.Nullable<int>
+    Season: System.Nullable<int>
+    Episode: System.Nullable<int>
+    FileName: string }
+
 // Internal representation of a search result before converting to Jellyfin's format
 type InternalSubtitleInfo =
   { Id: string

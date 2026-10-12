@@ -31,7 +31,13 @@ let serveFixture () : Task<int> =
     Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)
     use archive = new MemoryStream()
     let zip = new ZipArchive(archive, ZipArchiveMode.Create, true)
-    let entry = zip.CreateEntry("subtitles/fixture.srt")
+
+    do
+      let unrelated = zip.CreateEntry("subtitles/Other.Movie.2019.srt")
+      use writer = new StreamWriter(unrelated.Open(), Encoding.UTF8)
+      writer.Write("wrong movie subtitle")
+
+    let entry = zip.CreateEntry("subtitles/Fixture.Movie.2020.srt")
 
     do
       use writer = new StreamWriter(entry.Open(), Encoding.UTF8)
